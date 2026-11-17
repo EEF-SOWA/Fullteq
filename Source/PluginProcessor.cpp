@@ -652,7 +652,7 @@ void FullteqAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
                     if (std::abs (dx) < 1.0e-6)
                     {
                         shapedTube = std::tanh (state.tubeK * 0.5 * (dry + state.tubePrevX) + state.tubeBias);
-                        state.tubePrevDrive = -1.0; // next sample recomputes the cached curve point
+                        state.tubePrevLnCosh = lnCosh (state.tubeK * dry + state.tubeBias);
                     }
                     else
                     {
@@ -675,10 +675,12 @@ void FullteqAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
                     // a low-boost lift pushes the iron harder - the band that
                     // carries the energy saturates first, as on the hardware.
                     if (! juce::exactlyEqual (drive, state.corePrevDrive)
-                        || ! juce::exactlyEqual (coreBias, state.corePrevBias))
+                        || ! juce::exactlyEqual (coreBias, state.corePrevBias)
+                        || ! juce::exactlyEqual (coreDrive, state.corePrevGain))
                     {
                         state.corePrevDrive = drive;
                         state.corePrevBias = coreBias;
+                        state.corePrevGain = coreDrive;
                         state.coreM = (1.2 + 1.8 * drive) * coreDrive;
                         state.coreDenom = state.coreM * (1.0 - coreTb * coreTb);
                     }

@@ -437,6 +437,31 @@ int main (int argc, char** argv)
         check (highLoud < 0.1 && highLoud > -3.0, "4 kHz keeps its level (bounded HF loss)", highLoud);
     }
 
+    std::printf ("7b. low boost drives the core after drive settles\n");
+    {
+        auto capture = [] (bool boostFirst)
+        {
+            FullteqAudioProcessor p;
+            prepare (p);
+            flat (p, false, true);
+            setParam (p, "drive", 0.4f);
+            if (boostFirst)
+                setParam (p, "lowBoost", 8.0f);
+            else
+            {
+                run (p, sine (50.0, 0.5, 4800)); // let the drive ramp finish on its own
+                setParam (p, "lowBoost", 8.0f);
+            }
+            run (p, sine (50.0, 0.5, 9600));
+            return run (p, sine (50.0, 0.5, 72000));
+        };
+        const auto together = capture (true), later = capture (false);
+        double diff = 0.0;
+        for (size_t i = 24000; i < together.size(); ++i)
+            diff = std::max (diff, (double) std::abs (together[i] - later[i]));
+        check (diff < 1e-3, "core slope follows low boost after drive settled", diff);
+    }
+
     std::printf ("8. bypass is a pure delayed copy and keeps latency aligned\n");
     {
         FullteqAudioProcessor p;

@@ -185,7 +185,7 @@ private:
         double dcIn = 0.0, dcOut = 0.0, tubePrevX = 0.0;
         double tubePrevDrive = -1.0, tubePrevLnCosh = 0.0;
         double tubeK = 0.0, tubeBias = 0.0, tubeTb = 0.0, tubeNorm = 1.0;
-        double corePrevDrive = -1.0, corePrevBias = -1.0, coreM = 1.0, coreDenom = 1.0;
+        double corePrevDrive = -1.0, corePrevBias = -1.0, corePrevGain = -1.0, coreM = 1.0, coreDenom = 1.0;
         double outDcIn = 0.0, outDcOut = 0.0;
         double transformerLow = 0.0, prevFlux = 0.0, magnetisation = 0.0;
         double coreHighLow = 0.0, coreHighBand = 0.0;
