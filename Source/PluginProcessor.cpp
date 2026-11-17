@@ -310,7 +310,12 @@ void FullteqAudioProcessor::getResponseDb (const double* frequenciesHz, float* o
 
 bool FullteqAudioProcessor::isEffectBypassed() const
 {
-    return *apvts.getRawParameterValue ("bypass") >= 0.5f || *apvts.getRawParameterValue ("input") < 0.5f;
+    return *apvts.getRawParameterValue ("bypass") >= 0.5f;
+}
+
+bool FullteqAudioProcessor::isEqActive() const
+{
+    return *apvts.getRawParameterValue ("input") >= 0.5f;
 }
 
 void FullteqAudioProcessor::loadPreset (int index)
@@ -351,20 +356,22 @@ void FullteqAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBloc
 {
     currentSampleRate.store (sampleRate, std::memory_order_relaxed);
     maxBlockSize = juce::jmax (1, samplesPerBlock);
+    activeOversamplingLog2 = sampleRate > 110000.0 ? 0 : (sampleRate > 56000.0 ? 1 : 2);
+    const int osFactor = 1 << activeOversamplingLog2;
 
     const int numChannels = juce::jmax (1, getTotalNumInputChannels());
     channelFilters.assign ((size_t) numChannels, {});
     nonlinearStates.assign ((size_t) numChannels, {});
 
     oversampler = std::make_unique<juce::dsp::Oversampling<float>> (
-        (size_t) numChannels, (size_t) oversamplingLog2, juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true, true);
+        (size_t) numChannels, (size_t) activeOversamplingLog2, juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true, true);
     oversampler->initProcessing ((size_t) maxBlockSize);
     oversampler->reset();
 
     latencySamples = juce::roundToInt (oversampler->getLatencyInSamples());
     setLatencySamples (latencySamples);
 
-    const double osRate = sampleRate * oversamplingFactor;
+    const double osRate = sampleRate * osFactor;
     dcBlockCoeff = 1.0 - 2.0 * kPi * 5.0 / osRate;
     transformerLowCoeff = 1.0 - std::exp (-2.0 * kPi * 160.0 / osRate);
     oversampledRate = osRate;
@@ -393,14 +400,15 @@ void FullteqAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBloc
     bypassSmoothed.reset (sampleRate, 0.02);
 
     // Start from the current parameter values instead of ramping up from zero.
-    lowBoostSmoothed.setCurrentAndTargetValue (*apvts.getRawParameterValue ("lowBoost"));
-    lowAttenSmoothed.setCurrentAndTargetValue (*apvts.getRawParameterValue ("lowAtten"));
+    const bool eqActive = isEqActive();
+    lowBoostSmoothed.setCurrentAndTargetValue (eqActive ? apvts.getRawParameterValue ("lowBoost")->load() : 0.0f);
+    lowAttenSmoothed.setCurrentAndTargetValue (eqActive ? apvts.getRawParameterValue ("lowAtten")->load() : 0.0f);
     lowQSmoothed.setCurrentAndTargetValue (*apvts.getRawParameterValue ("lowQ"));
     lowFreqHzSmoothed.setCurrentAndTargetValue (lowFrequencies[(size_t) indexFromChoice (*apvts.getRawParameterValue ("lowFreq"), (int) lowFrequencies.size())]);
     highFreqHzSmoothed.setCurrentAndTargetValue (highFrequencies[(size_t) indexFromChoice (*apvts.getRawParameterValue ("highFreq"), (int) highFrequencies.size())]);
     attenFreqHzSmoothed.setCurrentAndTargetValue (attenuationFrequencies[(size_t) indexFromChoice (*apvts.getRawParameterValue ("attenSel"), (int) attenuationFrequencies.size())]);
-    highBoostSmoothed.setCurrentAndTargetValue (*apvts.getRawParameterValue ("highBoost"));
-    highAttenSmoothed.setCurrentAndTargetValue (*apvts.getRawParameterValue ("highAtten"));
+    highBoostSmoothed.setCurrentAndTargetValue (eqActive ? apvts.getRawParameterValue ("highBoost")->load() : 0.0f);
+    highAttenSmoothed.setCurrentAndTargetValue (eqActive ? apvts.getRawParameterValue ("highAtten")->load() : 0.0f);
     bandwidthSmoothed.setCurrentAndTargetValue (*apvts.getRawParameterValue ("bandwidth"));
     inputGainSmoothed.setCurrentAndTargetValue (juce::Decibels::decibelsToGain ((float) *apvts.getRawParameterValue ("inputGain")));
     outputGainSmoothed.setCurrentAndTargetValue (juce::Decibels::decibelsToGain ((float) *apvts.getRawParameterValue ("outputGain")));
@@ -475,6 +483,7 @@ void FullteqAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
 
     const bool bypassTarget = isEffectBypassed();
     bypassSmoothed.setTargetValue (bypassTarget ? 1.0f : 0.0f);
+    const bool eqActive = isEqActive();
 
     const float targetLowHz = lowFrequencies[(size_t) indexFromChoice (*apvts.getRawParameterValue ("lowFreq"), (int) lowFrequencies.size())];
     const float targetHighHz = highFrequencies[(size_t) indexFromChoice (*apvts.getRawParameterValue ("highFreq"), (int) highFrequencies.size())];
@@ -484,14 +493,14 @@ void FullteqAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     {
         // Fully bypassed: skip the DSP, but keep the same latency as the wet
         // path so the host's delay compensation stays correct.
-        lowBoostSmoothed.setCurrentAndTargetValue (*apvts.getRawParameterValue ("lowBoost"));
-        lowAttenSmoothed.setCurrentAndTargetValue (*apvts.getRawParameterValue ("lowAtten"));
+        lowBoostSmoothed.setCurrentAndTargetValue (eqActive ? apvts.getRawParameterValue ("lowBoost")->load() : 0.0f);
+        lowAttenSmoothed.setCurrentAndTargetValue (eqActive ? apvts.getRawParameterValue ("lowAtten")->load() : 0.0f);
         lowQSmoothed.setCurrentAndTargetValue (*apvts.getRawParameterValue ("lowQ"));
         lowFreqHzSmoothed.setCurrentAndTargetValue (targetLowHz);
         highFreqHzSmoothed.setCurrentAndTargetValue (targetHighHz);
         attenFreqHzSmoothed.setCurrentAndTargetValue (targetAttenHz);
-        highBoostSmoothed.setCurrentAndTargetValue (*apvts.getRawParameterValue ("highBoost"));
-        highAttenSmoothed.setCurrentAndTargetValue (*apvts.getRawParameterValue ("highAtten"));
+        highBoostSmoothed.setCurrentAndTargetValue (eqActive ? apvts.getRawParameterValue ("highBoost")->load() : 0.0f);
+        highAttenSmoothed.setCurrentAndTargetValue (eqActive ? apvts.getRawParameterValue ("highAtten")->load() : 0.0f);
         bandwidthSmoothed.setCurrentAndTargetValue (*apvts.getRawParameterValue ("bandwidth"));
         inputGainSmoothed.setCurrentAndTargetValue (juce::Decibels::decibelsToGain ((float) *apvts.getRawParameterValue ("inputGain")));
         outputGainSmoothed.setCurrentAndTargetValue (juce::Decibels::decibelsToGain ((float) *apvts.getRawParameterValue ("outputGain")));
@@ -513,14 +522,14 @@ void FullteqAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
 
     wasBypassed = false;
 
-    lowBoostSmoothed.setTargetValue (*apvts.getRawParameterValue ("lowBoost"));
-    lowAttenSmoothed.setTargetValue (*apvts.getRawParameterValue ("lowAtten"));
+    lowBoostSmoothed.setTargetValue (eqActive ? apvts.getRawParameterValue ("lowBoost")->load() : 0.0f);
+    lowAttenSmoothed.setTargetValue (eqActive ? apvts.getRawParameterValue ("lowAtten")->load() : 0.0f);
     lowQSmoothed.setTargetValue (*apvts.getRawParameterValue ("lowQ"));
     lowFreqHzSmoothed.setTargetValue (targetLowHz);
     highFreqHzSmoothed.setTargetValue (targetHighHz);
     attenFreqHzSmoothed.setTargetValue (targetAttenHz);
-    highBoostSmoothed.setTargetValue (*apvts.getRawParameterValue ("highBoost"));
-    highAttenSmoothed.setTargetValue (*apvts.getRawParameterValue ("highAtten"));
+    highBoostSmoothed.setTargetValue (eqActive ? apvts.getRawParameterValue ("highBoost")->load() : 0.0f);
+    highAttenSmoothed.setTargetValue (eqActive ? apvts.getRawParameterValue ("highAtten")->load() : 0.0f);
     bandwidthSmoothed.setTargetValue (*apvts.getRawParameterValue ("bandwidth"));
     inputGainSmoothed.setTargetValue (juce::Decibels::decibelsToGain ((float) *apvts.getRawParameterValue ("inputGain")));
     outputGainSmoothed.setTargetValue (juce::Decibels::decibelsToGain ((float) *apvts.getRawParameterValue ("outputGain")));
@@ -603,7 +612,7 @@ void FullteqAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
 
             for (int j = 0; j < upLength; ++j)
             {
-                const double drive = driveRamp[(size_t) (j >> oversamplingLog2)];
+                const double drive = driveRamp[(size_t) (j >> activeOversamplingLog2)];
                 double x = static_cast<double> (data[j]);
 
                 if (tubeOn)

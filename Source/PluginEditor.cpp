@@ -22,6 +22,8 @@ namespace
 
     constexpr int editorWidth = 1320;
     constexpr int editorHeight = 440;
+    constexpr int defaultEditorWidth = 1140;
+    constexpr int defaultEditorHeight = 380;
 
     // Control centres (editor coordinates) shared by layout and the silkscreen layer.
     const Point<float> lowBoostC { 360.0f, 145.0f }, lowAttenC { 500.0f, 145.0f };
@@ -103,7 +105,7 @@ namespace
     }
 
     /** Pultec-style black bakelite knob: scalloped skirt, raised collar, concave glossy cap, pointer line. */
-    void drawSkirtedKnob (juce::Graphics& g, Point<float> c, float R, float angle, int lobes)
+    void drawSkirtedKnob (juce::Graphics& g, Point<float> c, float R, float angle, int lobes, bool hovered)
     {
         juce::Path skirt;
         const int steps = 240;
@@ -143,7 +145,7 @@ namespace
                 g.drawLine ({ p0, p1 }, R * 0.08f);
             }
         }
-        ColourGradient rim (juce::Colours::white.withAlpha (0.40f), c.translated (-R, -R), juce::Colours::black.withAlpha (0.9f), c.translated (R * 0.7f, R * 0.7f), false);
+        ColourGradient rim (juce::Colours::white.withAlpha (hovered ? 0.58f : 0.40f), c.translated (-R, -R), juce::Colours::black.withAlpha (0.9f), c.translated (R * 0.7f, R * 0.7f), false);
         g.setGradientFill (rim);
         g.strokePath (skirt, juce::PathStrokeType (1.1f));
 
@@ -190,7 +192,7 @@ namespace
         const auto p1 = polar (c, angle, R * 0.97f);
         g.setColour (juce::Colours::black.withAlpha (0.6f));
         g.drawLine ({ p0.translated (0.6f, 0.8f), p1.translated (0.6f, 0.8f) }, R * 0.065f);
-        g.setColour (Colour (cream));
+        g.setColour (hovered ? juce::Colours::white : Colour (cream));
         g.drawLine ({ p0, p1 }, R * 0.06f);
     }
 
@@ -219,7 +221,7 @@ namespace
     }
 
     /** Chicken-head pointer knob (CPS, ATTEN SEL). s = pointer length from the shaft. */
-    void drawChickenHead (juce::Graphics& g, Point<float> c, float s, float angle)
+    void drawChickenHead (juce::Graphics& g, Point<float> c, float s, float angle, bool hovered)
     {
         const auto t = juce::AffineTransform::rotation (angle).translated (c);
         juce::Path head;
@@ -250,12 +252,12 @@ namespace
         ridgeLine.lineTo (0.0f, s * 0.50f);
         g.setColour (juce::Colours::white.withAlpha (0.10f));
         g.strokePath (ridgeLine, juce::PathStrokeType (s * 0.10f), t);
-        g.setColour (Colour (cream));
+        g.setColour (hovered ? juce::Colours::white : Colour (cream));
         g.drawLine ({ Point<float> (0.0f, -s * 0.93f).transformedBy (t), Point<float> (0.0f, -s * 0.45f).transformedBy (t) }, s * 0.045f);
     }
 
     /** Long bar knob (KCS) with a white index on the pointing end. */
-    void drawBarKnob (juce::Graphics& g, Point<float> c, float s, float angle)
+    void drawBarKnob (juce::Graphics& g, Point<float> c, float s, float angle, bool hovered)
     {
         const auto t = juce::AffineTransform::rotation (angle).translated (c);
         juce::Path bar;
@@ -274,12 +276,12 @@ namespace
 
         g.setColour (juce::Colours::white.withAlpha (0.10f));
         g.drawLine ({ Point<float> (0.0f, -s * 0.95f).transformedBy (t), Point<float> (0.0f, s * 0.70f).transformedBy (t) }, s * 0.06f);
-        g.setColour (Colour (cream));
+        g.setColour (hovered ? juce::Colours::white : Colour (cream));
         g.drawLine ({ Point<float> (0.0f, -s * 0.94f).transformedBy (t), Point<float> (0.0f, -s * 0.52f).transformedBy (t) }, s * 0.045f);
     }
 
     /** Small pointed knob used for OFF/ON. */
-    void drawPointerKnob (juce::Graphics& g, Point<float> c, float r, float angle)
+    void drawPointerKnob (juce::Graphics& g, Point<float> c, float r, float angle, bool hovered)
     {
         const float tip = r * 1.55f;
         const float phi = std::acos (r / tip);
@@ -300,12 +302,12 @@ namespace
         g.setGradientFill (radial (juce::Colours::white.withAlpha (0.35f), spot, juce::Colours::transparentWhite, r * 0.5f));
         g.fillEllipse (spot.x - r * 0.5f, spot.y - r * 0.4f, r, r * 0.8f);
 
-        g.setColour (Colour (cream));
+        g.setColour (hovered ? juce::Colours::white : Colour (cream));
         g.drawLine ({ polar (c, angle, r * 0.55f), polar (c, angle, r * 1.35f) }, 1.6f);
     }
 
     /** Chrome bat-handle toggle on a hex nut. */
-    void drawBatToggle (juce::Graphics& g, Point<float> c, bool on)
+    void drawBatToggle (juce::Graphics& g, Point<float> c, bool on, bool hovered)
     {
         auto chrome = [] (Point<float> a, Point<float> b)
         {
@@ -362,7 +364,7 @@ namespace
         leverFill.addColour (0.65, Colour (0xff9aa0a3));
         g.setGradientFill (leverFill);
         g.fillPath (lever);
-        g.setGradientFill (radial (juce::Colours::white, ballC.translated (-1.5f, -1.8f), Colour (0xff3c4043), 6.0f));
+        g.setGradientFill (radial (juce::Colours::white, ballC.translated (-1.5f, -1.8f), Colour (hovered ? 0xff5a6064 : 0xff3c4043), 6.0f));
         g.fillPath (ball);
         g.setColour (juce::Colours::black.withAlpha (0.45f));
         g.strokePath (both, juce::PathStrokeType (0.6f));
@@ -423,10 +425,10 @@ namespace
         g.fillEllipse (spot.x - r * 0.4f, spot.y - r * 0.4f, r * 0.8f, r * 0.8f);
     }
 
-    void drawKnobNumerals (juce::Graphics& g, Point<float> c, float radius, float size = 12.0f)
+    void drawKnobNumerals (juce::Graphics& g, Point<float> c, float radius, int step = 1, float size = 12.0f)
     {
         for (int i = 0; i <= 10; ++i)
-            silkAt (g, juce::String (i), polar (c, knobStart + (knobEnd - knobStart) * (float) i / 10.0f, radius), size);
+            silkAt (g, juce::String (i * step), polar (c, knobStart + (knobEnd - knobStart) * (float) i / 10.0f, radius), size);
     }
 
     template <size_t N>
@@ -479,11 +481,12 @@ void FullteqLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int 
     const float angle = startAngle + sliderPos * (endAngle - startAngle);
     const auto style = slider.getProperties()["style"].toString();
     const float size = (float) slider.getProperties()["radius"];
+    const bool hovered = slider.isMouseOverOrDragging();
 
-    if (style == "chicken")      drawChickenHead (g, c, size, angle);
-    else if (style == "bar")     drawBarKnob (g, c, size, angle);
-    else if (style == "trim")    drawSkirtedKnob (g, c, size, angle, 8);
-    else                         drawSkirtedKnob (g, c, size, angle, 10);
+    if (style == "chicken")      drawChickenHead (g, c, size, angle, hovered);
+    else if (style == "bar")     drawBarKnob (g, c, size, angle, hovered);
+    else if (style == "trim")    drawSkirtedKnob (g, c, size, angle, 8, hovered);
+    else                         drawSkirtedKnob (g, c, size, angle, 10, hovered);
 }
 
 void FullteqLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& button, const Colour&, bool highlighted, bool down)
@@ -515,18 +518,18 @@ void FullteqLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& bu
     g.fillPath (arrow);
 }
 
-void FullteqLookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& button, bool, bool)
+void FullteqLookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& button, bool highlighted, bool)
 {
     const auto c = button.getLocalBounds().toFloat().getCentre();
     if (button.getProperties()["style"].toString() == "power")
     {
         // Bypass parameter: false = unit ON, pointer swings to ON.
         const bool unitOn = ! button.getToggleState();
-        drawPointerKnob (g, c, 15.0f, unitOn ? kPi * 0.22f : -kPi * 0.22f);
+        drawPointerKnob (g, c, 15.0f, unitOn ? kPi * 0.22f : -kPi * 0.22f, highlighted);
     }
     else
     {
-        drawBatToggle (g, c, button.getToggleState());
+        drawBatToggle (g, c, button.getToggleState(), highlighted);
     }
 }
 
@@ -574,18 +577,18 @@ void FullteqResponseCurve::paint (juce::Graphics& g)
     };
     auto dbToY = [&] (float db)
     {
-        return juce::jmap (juce::jlimit (-rangeDb, rangeDb, db), -rangeDb, rangeDb, b.getBottom() - 12.0f, b.getY() + 6.0f);
+        return juce::jmap (juce::jlimit (-rangeDb, rangeDb, db), -rangeDb, rangeDb, b.getBottom() - 14.0f, b.getY() + 6.0f);
     };
 
     for (double hz : { 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0 })
     {
         const bool major = hz == 100.0 || hz == 1000.0 || hz == 10000.0;
         g.setColour (Colour (cream).withAlpha (major ? 0.13f : 0.06f));
-        g.drawVerticalLine ((int) freqToX (hz), b.getY() + 2.0f, b.getBottom() - 11.0f);
+        g.drawVerticalLine ((int) freqToX (hz), b.getY() + 2.0f, b.getBottom() - 13.0f);
         if (major)
         {
             g.setColour (Colour (cream).withAlpha (0.45f));
-            g.setFont (silkFont (9.0f));
+            g.setFont (silkFont (10.0f));
             g.drawText (hz >= 1000.0 ? juce::String (hz / 1000.0, 0) + "k" : juce::String (hz, 0),
                         Rectangle<float> (30.0f, 10.0f).withCentre ({ freqToX (hz), b.getBottom() - 6.0f }), juce::Justification::centred, false);
         }
@@ -613,8 +616,8 @@ void FullteqResponseCurve::paint (juce::Graphics& g)
         if (i == 0) curve.startNewSubPath (x, y); else curve.lineTo (x, y);
     }
 
-    const bool bypassed = processorRef.isEffectBypassed();
-    const auto lineColour = bypassed ? Colour (0xff7d8a8c) : Colour (amber);
+    const bool dimmed = processorRef.isEffectBypassed() || ! processorRef.isEqActive();
+    const auto lineColour = dimmed ? Colour (0xff7d8a8c) : Colour (amber);
 
     juce::Path fill (curve);
     fill.lineTo (freqToX (maxHz), dbToY (0.0f));
@@ -626,7 +629,7 @@ void FullteqResponseCurve::paint (juce::Graphics& g)
         g.reduceClipRegion (b.reduced (1.0f).toNearestInt());
         g.setColour (lineColour.withAlpha (0.12f));
         g.fillPath (fill);
-        g.setColour (lineColour.withAlpha (bypassed ? 0.08f : 0.22f));
+        g.setColour (lineColour.withAlpha (dimmed ? 0.08f : 0.22f));
         g.strokePath (curve, juce::PathStrokeType (5.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
         g.setColour (lineColour);
         g.strokePath (curve, juce::PathStrokeType (1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
@@ -654,6 +657,8 @@ FullteqAudioProcessorEditor::FullteqAudioProcessorEditor (FullteqAudioProcessor&
 {
     setLookAndFeel (&lookAndFeel);
     noiseTile = makeNoiseTile();
+    panelView.setSize (editorWidth, editorHeight);
+    addAndMakeVisible (panelView);
 
     for (auto* knob : { &lowBoost, &lowAtten, &highBoost, &highAtten, &bandwidth })
         configureKnob (*knob, "pultec", bigR, knobStart, knobEnd);
@@ -668,12 +673,13 @@ FullteqAudioProcessorEditor::FullteqAudioProcessorEditor (FullteqAudioProcessor&
     configureToggle (transformerButton, "bat");
     configureToggle (bypassButton, "power");
 
-    inButton.setTooltip ("IN: toggle processing (bypasses the unit when off)");
+    inButton.setTooltip ("IN: route the signal through the passive EQ network (tube and transformer stay active)");
     tubeButton.setTooltip ("Tube amplifier stage (2nd and 3rd harmonics)");
     transformerButton.setTooltip ("Transformer low-frequency core saturation");
     bypassButton.setTooltip ("OFF bypasses the whole unit");
+    responseCurve.setTooltip ("Passive EQ network response (dimmed when IN or POWER is off)");
 
-    addAndMakeVisible (responseCurve);
+    panelView.addAndMakeVisible (responseCurve);
 
     auto& state = processorRef.apvts;
     lowBoostA = std::make_unique<SliderAttachment> (state, "lowBoost", lowBoost);
@@ -693,6 +699,15 @@ FullteqAudioProcessorEditor::FullteqAudioProcessorEditor (FullteqAudioProcessor&
     transformerA = std::make_unique<ButtonAttachment> (state, "transformer", transformerButton);
     bypassA = std::make_unique<ButtonAttachment> (state, "bypass", bypassButton);
 
+    for (auto [slider, paramId] : { std::pair<juce::Slider*, const char*> { &lowBoost, "lowBoost" },
+                                    { &lowAtten, "lowAtten" }, { &highBoost, "highBoost" },
+                                    { &highAtten, "highAtten" }, { &bandwidth, "bandwidth" },
+                                    { &inputGain, "inputGain" }, { &drive, "drive" },
+                                    { &outputGain, "outputGain" }, { &lowFreq, "lowFreq" },
+                                    { &highFreq, "highFreq" }, { &attenSel, "attenSel" } })
+        if (auto* param = state.getParameter (paramId))
+            slider->setDoubleClickReturnValue (true, (double) param->convertFrom0to1 (param->getDefaultValue()));
+
     for (auto* name : FullteqAudioProcessor::presetNames)
         presetBox.addItem (name, presetBox.getNumItems() + 1);
     presetBox.setTextWhenNothingSelected ("(custom)");
@@ -707,7 +722,7 @@ FullteqAudioProcessorEditor::FullteqAudioProcessorEditor (FullteqAudioProcessor&
         if (id > 0)
             processorRef.loadPreset (id - 1);
     };
-    addAndMakeVisible (presetBox);
+    panelView.addAndMakeVisible (presetBox);
 
     previousPreset.onClick = [this]
     {
@@ -723,15 +738,21 @@ FullteqAudioProcessorEditor::FullteqAudioProcessorEditor (FullteqAudioProcessor&
         processorRef.loadPreset (cur < 0 ? 0 : (cur + 1) % numPresets);
         presetBox.setSelectedId (processorRef.getCurrentPresetIndex() + 1, juce::dontSendNotification);
     };
-    addAndMakeVisible (previousPreset);
-    addAndMakeVisible (nextPreset);
+    panelView.addAndMakeVisible (previousPreset);
+    panelView.addAndMakeVisible (nextPreset);
 
-    setSize (editorWidth, editorHeight);
+    setResizable (true, true);
+    setResizeLimits (660, 220, 2640, 880);
+    if (auto* constrainer = getConstrainer())
+        constrainer->setFixedAspectRatio ((double) editorWidth / (double) editorHeight);
+    layoutPanel();
+    setSize (defaultEditorWidth, defaultEditorHeight);
     startTimerHz (20);
 }
 
 FullteqAudioProcessorEditor::~FullteqAudioProcessorEditor()
 {
+    panelView.setLookAndFeel (nullptr);
     setLookAndFeel (nullptr);
 }
 
@@ -743,21 +764,21 @@ void FullteqAudioProcessorEditor::configureKnob (juce::Slider& slider, const cha
     slider.setPopupDisplayEnabled (true, true, this, 1500);
     slider.getProperties().set ("style", style);
     slider.getProperties().set ("radius", radius);
-    addAndMakeVisible (slider);
+    panelView.addAndMakeVisible (slider);
 }
 
 void FullteqAudioProcessorEditor::configureToggle (juce::ToggleButton& button, const char* style)
 {
     button.setClickingTogglesState (true);
     button.getProperties().set ("style", style);
-    addAndMakeVisible (button);
+    panelView.addAndMakeVisible (button);
 }
 
 void FullteqAudioProcessorEditor::renderStaticLayer (float scale)
 {
     staticScale = scale;
-    staticLayer = juce::Image (juce::Image::RGB, juce::roundToInt ((float) getWidth() * scale),
-                               juce::roundToInt ((float) getHeight() * scale), true);
+    staticLayer = juce::Image (juce::Image::RGB, juce::roundToInt ((float) editorWidth * scale),
+                               juce::roundToInt ((float) editorHeight * scale), true);
     juce::Graphics sg (staticLayer);
     sg.addTransform (juce::AffineTransform::scale (scale));
     paintStatic (sg);
@@ -765,7 +786,7 @@ void FullteqAudioProcessorEditor::renderStaticLayer (float scale)
 
 void FullteqAudioProcessorEditor::paintStatic (juce::Graphics& g)
 {
-    const auto full = getLocalBounds().toFloat();
+    const auto full = Rectangle<float> (0.0f, 0.0f, (float) editorWidth, (float) editorHeight);
     g.setGradientFill (ColourGradient (Colour (0xff1c1e20), 0.0f, 0.0f, Colour (0xff08090a), 0.0f, full.getBottom(), false));
     g.fillAll();
 
@@ -835,12 +856,12 @@ void FullteqAudioProcessorEditor::paintStatic (juce::Graphics& g)
                                { highBoostC, "BOOST" }, { highAttenC, "ATTEN" } })
     {
         silkAt (g, caption, c.translated (0.0f, -88.0f), 14.0f);
-        drawKnobNumerals (g, c, bigR + 18.0f);
+        drawKnobNumerals (g, c, bigR + 18.0f, 2);
     }
 
-    drawKnobNumerals (g, bandwidthC, bigR + 18.0f);
-    silkAt (g, "SHARP", polar (bandwidthC, knobStart, bigR + 18.0f).translated (-16.0f, 14.0f), 8.0f);
-    silkAt (g, "BROAD", polar (bandwidthC, knobEnd, bigR + 18.0f).translated (16.0f, 14.0f), 8.0f);
+    drawKnobNumerals (g, bandwidthC, bigR + 18.0f, 1);
+    silkAt (g, "SHARP", polar (bandwidthC, knobStart, bigR + 18.0f).translated (-22.0f, 16.0f), 10.0f);
+    silkAt (g, "BROAD", polar (bandwidthC, knobEnd, bigR + 18.0f).translated (22.0f, 16.0f), 10.0f);
     silkAt (g, "BANDWIDTH", bandwidthC.translated (0.0f, 75.0f), 14.0f);
 
     // Stepped selectors.
@@ -861,7 +882,7 @@ void FullteqAudioProcessorEditor::paintStatic (juce::Graphics& g)
     // Left column: drive trims and switches.
     for (auto [c, caption] : { std::pair<Point<float>, const char*> { inputC, "INPUT" }, { driveC, "DRIVE" }, { outputC, "OUTPUT" } })
     {
-        silkAt (g, caption, c.translated (0.0f, -36.0f), 10.0f);
+        silkAt (g, caption, c.translated (0.0f, -36.0f), 10.5f);
         for (int i = 0; i <= 10; ++i)
         {
             const float a = knobStart + (knobEnd - knobStart) * (float) i / 10.0f;
@@ -890,7 +911,7 @@ void FullteqAudioProcessorEditor::paintStatic (juce::Graphics& g)
                         graphBezel.getBottomLeft().translated (5.0f, -5.0f), graphBezel.getBottomRight().translated (-5.0f, -5.0f) })
             drawScrew (g, p, 2.6f, 0.8f);
     }
-    silk (g, "RESPONSE", Rectangle<float> (graphBezel.getX(), graphBezel.getBottom() + 4.0f, graphBezel.getWidth(), 14.0f), 10.0f);
+    silk (g, "RESPONSE", Rectangle<float> (graphBezel.getX(), graphBezel.getBottom() + 4.0f, graphBezel.getWidth(), 14.0f), 10.5f);
 
     // Brass serial plate.
     {
@@ -929,6 +950,11 @@ void FullteqAudioProcessorEditor::paintStatic (juce::Graphics& g)
 
 void FullteqAudioProcessorEditor::paint (juce::Graphics& g)
 {
+    g.fillAll (Colour (0xff08090a));
+}
+
+void FullteqAudioProcessorEditor::paintPanel (juce::Graphics& g)
+{
     const float scale = juce::jmax (1.0f, g.getInternalContext().getPhysicalPixelScaleFactor());
     if (staticLayer.isNull() || std::abs (scale - staticScale) > 0.01f)
         renderStaticLayer (scale);
@@ -940,6 +966,14 @@ void FullteqAudioProcessorEditor::paint (juce::Graphics& g)
 }
 
 void FullteqAudioProcessorEditor::resized()
+{
+    const float scale = juce::jmin ((float) getWidth() / (float) editorWidth,
+                                    (float) getHeight() / (float) editorHeight);
+    panelView.setTransform (juce::AffineTransform::scale (scale));
+    staticLayer = {};
+}
+
+void FullteqAudioProcessorEditor::layoutPanel()
 {
     staticLayer = {};
 
@@ -965,9 +999,9 @@ void FullteqAudioProcessorEditor::resized()
     lampBounds = Rectangle<int> (100, 100).withCentre (lampC.toInt());
 
     responseCurve.setBounds (graphBezel.reduced (10.0f).toNearestInt());
-    presetBox.setBounds (1050, 202, 200, 28);
-    previousPreset.setBounds (1050, 238, 98, 26);
-    nextPreset.setBounds (1152, 238, 98, 26);
+    presetBox.setBounds (1050, 198, 200, 32);
+    previousPreset.setBounds (1050, 236, 98, 32);
+    nextPreset.setBounds (1152, 236, 98, 32);
 }
 
 void FullteqAudioProcessorEditor::timerCallback()
@@ -979,5 +1013,5 @@ void FullteqAudioProcessorEditor::timerCallback()
         presetBox.setSelectedId (expectedId, juce::dontSendNotification);
 
     responseCurve.repaint();
-    repaint (lampBounds);
+    panelView.repaint (lampBounds);
 }

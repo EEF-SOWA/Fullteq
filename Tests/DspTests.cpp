@@ -518,6 +518,24 @@ int main (int argc, char** argv)
         check (std::abs (*restored.apvts.getRawParameterValue ("lowBoost") - 4.0f) < 1e-3f, "state restore keeps lowBoost 4");
     }
 
+    std::printf ("10b. IN toggle bypasses only EQ while POWER bypasses the unit\n");
+    {
+        FullteqAudioProcessor p;
+        prepare (p);
+        flat (p, true, false);
+        setParam (p, "drive", 0.8f);
+        setParam (p, "lowBoost", 10.0f);
+        setParam (p, "input", 0.0f);
+        check (! p.isEffectBypassed(), "POWER stays active when IN is off");
+        check (! p.isEqActive(), "IN off disables passive EQ");
+        const auto out = run (p, sine (1000.0, 0.5, 72000));
+        const double fund = amplitudeAt (out, 1000.0);
+        const double h3 = 20.0 * std::log10 (amplitudeAt (out, 3000.0) / fund);
+        check (h3 > -30.0, "tube harmonics stay active when IN is off", h3);
+        const double subDb = 20.0 * std::log10 (amplitudeAt (run (p, sine (50.0, 0.01, 72000)), 50.0) / 0.01);
+        check (std::abs (subDb) < 0.3, "50 Hz EQ lift bypassed when IN is off", subDb);
+    }
+
     std::printf ("11. high band keeps its lift above the dial frequency (air settings)\n");
     {
         FullteqAudioProcessor p;
@@ -706,6 +724,29 @@ int main (int argc, char** argv)
         check (slow > -20.0 && fast > -20.0, "the core has memory at both pitches", std::min (slow, fast));
         // The point of the work: the loop must be WIDER (more memory) up high.
         check (fast > slow + 2.0, "loop widens with pitch", fast - slow);
+    }
+
+    std::printf ("16. multi-rate adaptive oversampling (44.1 / 96 / 192 kHz)\n");
+    {
+        for (double sr : { 44100.0, 96000.0, 192000.0 })
+        {
+            FullteqAudioProcessor p;
+            p.setPlayConfigDetails (2, 2, sr, blockSize);
+            p.prepareToPlay (sr, blockSize);
+            flat (p, true, true);
+            setParam (p, "drive", 0.5f);
+            std::vector<float> buf ((size_t) sr);
+            for (size_t i = 0; i < buf.size(); ++i)
+                buf[i] = (float) (0.25 * std::sin (2.0 * juce::MathConstants<double>::pi * 1000.0 * (double) i / sr));
+            const auto out = run (p, buf);
+            bool finite = true;
+            for (float s : out) finite = finite && std::isfinite (s);
+            check (finite, "multi-rate output finite", sr);
+            if (sr > 110000.0)
+                check (p.getLatencySamples() == 0, "192 kHz runs 1x with zero oversampler latency", (double) p.getLatencySamples());
+            else
+                check (p.getLatencySamples() > 0, "44.1/96 kHz reports oversampler latency", (double) p.getLatencySamples());
+        }
     }
 
     std::printf ("\n%s (%d failure%s)\n", failures == 0 ? "ALL PASSED" : "FAILED", failures, failures == 1 ? "" : "s");

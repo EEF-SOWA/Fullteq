@@ -60,7 +60,8 @@ struct FullteqBiquad
  *                     dropping back to 0 dB at Nyquist
  *   [4] high atten  : high shelf cut at 5 / 10 / 20 kHz
  *
- * Tube and transformer are non-linear, so they run 4x oversampled. The
+ * Tube and transformer are non-linear, so they run at ~176.4/192 kHz internal
+ * rate (4x at 44.1/48 kHz, 2x at 88.2/96 kHz, 1x at 176.4/192 kHz). The
  * oversampler latency is reported to the host and applied to the dry path so
  * the bypass cross-fade stays phase aligned.
  */
@@ -83,7 +84,7 @@ public:
     bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
-    double getTailLengthSeconds() const override { return 0.0; }
+    double getTailLengthSeconds() const override { return 0.05; }
 
     int getNumPrograms() override;
     int getCurrentProgram() override;
@@ -157,6 +158,9 @@ public:
     /** True when the plug-in is bypassed (BYPASS on or IN off). */
     bool isEffectBypassed() const;
 
+    /** True when the passive EQ network is switched in (IN toggle on). */
+    bool isEqActive() const;
+
     // -----------------------------------------------------------------
     // Presets (exposed to the host through the program interface).
     // -----------------------------------------------------------------
@@ -215,10 +219,9 @@ private:
     void resetDspState();
     void resizeScratch (int numSamples);
 
-    static constexpr int oversamplingLog2 = 2; // 4x: keeps heavy-drive harmonics from folding back into the audio band
-    static constexpr int oversamplingFactor = 1 << oversamplingLog2;
     static constexpr int controlSubBlockSize = 32;
 
+    int activeOversamplingLog2 = 2;
     std::atomic<double> currentSampleRate { 44100.0 };
     int maxBlockSize = 512;
     int latencySamples = 0;
@@ -230,7 +233,7 @@ private:
     double dcBlockCoeff = 0.999;
     double transformerLowCoeff = 0.02;
     /** Oversampled rate, kept for the core-loss rate weighting. */
-    double oversampledRate = 48000.0 * oversamplingFactor;
+    double oversampledRate = 192000.0;
     /** One-pole coefficient for the high-band split. */
     double highLossCoeff = 0.01;
     double highCapCoeff = 0.01;

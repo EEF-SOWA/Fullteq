@@ -23,7 +23,7 @@ public:
 
 /** Log-frequency magnitude plot of the passive EQ network (analytic, no audio-thread access),
     drawn as a recessed instrument window behind glass. */
-class FullteqResponseCurve final : public juce::Component
+class FullteqResponseCurve final : public juce::Component, public juce::SettableTooltipClient
 {
 public:
     explicit FullteqResponseCurve (FullteqAudioProcessor& p) : processorRef (p) {}
@@ -52,14 +52,25 @@ private:
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
 
+    struct Panel final : public juce::Component
+    {
+        explicit Panel (FullteqAudioProcessorEditor& o) : owner (o) {}
+        void paint (juce::Graphics& g) override { owner.paintPanel (g); }
+        void resized() override { owner.layoutPanel(); }
+        FullteqAudioProcessorEditor& owner;
+    };
+
     void configureKnob (juce::Slider&, const char* style, float radius, float startAngle, float endAngle);
     void configureToggle (juce::ToggleButton&, const char* style);
     void renderStaticLayer (float scale);
     void paintStatic (juce::Graphics&);
+    void paintPanel (juce::Graphics&);
+    void layoutPanel();
     void timerCallback() override;
 
     FullteqAudioProcessor& processorRef;
     FullteqLookAndFeel lookAndFeel;
+    Panel panelView { *this };
     FullteqResponseCurve responseCurve;
 
     // Rotary controls: main knobs, trims, and the stepped selectors (chicken-head / bar knobs).
