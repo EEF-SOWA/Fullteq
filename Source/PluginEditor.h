@@ -35,6 +35,8 @@ private:
     static constexpr float rangeDb = 15.0f;
 
     FullteqAudioProcessor& processorRef;
+    std::vector<double> curveHz;
+    std::vector<float> curveDb;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FullteqResponseCurve)
 };
@@ -83,10 +85,11 @@ private:
 
     juce::Image staticLayer, noiseTile;
     float staticScale = 0.0f;
+    uint32_t lastUiRevision = 0;
+    double lastSampleRate = 0.0;
 
-    std::unique_ptr<SliderAttachment> lowBoostA, lowAttenA, highBoostA, highAttenA, bandwidthA, inputGainA, driveA, outputGainA;
-    std::unique_ptr<SliderAttachment> lowFreqA, highFreqA, attenSelA;
-    std::unique_ptr<ButtonAttachment> inA, tubeA, transformerA, bypassA;
+    std::vector<std::unique_ptr<SliderAttachment>> sliderAttachments;
+    std::vector<std::unique_ptr<ButtonAttachment>> buttonAttachments;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FullteqAudioProcessorEditor)
 };

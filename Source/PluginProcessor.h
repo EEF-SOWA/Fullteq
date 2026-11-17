@@ -4,6 +4,7 @@
 
 #include <array>
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -146,6 +147,12 @@ public:
     static constexpr double kLowAttenMaxDb = 12.0;       // measured plateau below 20 Hz at atten 8
     static constexpr double kLowAttenDialTilt = 0.33;     // the measured cut plateau is flat, so only half-tilt
 
+    /** Full scale of the 0..10 boost / atten dials, in dB. Shared by the gain
+        curves and the core-drive anchor so a dial rescale cannot desync them. */
+    static constexpr double kFullScaleDb = 8.0;
+    /** Default drive; also the unity-gain anchor of the transformer stage. */
+    static constexpr float kDefaultDrive = 0.15f;
+
     static BandCoefficients computeBandCoefficients (double sampleRate,
                                                     float lowFrequencyHz, float lowBoostDb, float lowAttenDb, float lowQ,
                                                     float highFrequencyHz, float attenuationFrequencyHz,
@@ -167,10 +174,7 @@ public:
     static const std::array<const char*, 8> presetNames;
     void loadPreset (int index);
     int getCurrentPresetIndex() const noexcept { return currentPreset.load (std::memory_order_relaxed); }
-
-    // Metering (linear peak, decaying).
-    float getInputLevel() const noexcept { return inputLevel.load (std::memory_order_relaxed); }
-    float getOutputLevel() const noexcept { return outputLevel.load (std::memory_order_relaxed); }
+    uint32_t getUiRevision() const noexcept { return uiRevision.load (std::memory_order_relaxed); }
 
 private:
     void parameterChanged (const juce::String& parameterID, float newValue) override;
@@ -179,15 +183,18 @@ private:
     struct NonlinearState
     {
         double dcIn = 0.0, dcOut = 0.0, tubePrevX = 0.0;
+        double tubePrevDrive = -1.0, tubePrevLnCosh = 0.0;
+        double tubeK = 0.0, tubeBias = 0.0, tubeTb = 0.0, tubeNorm = 1.0;
+        double corePrevDrive = -1.0, corePrevBias = -1.0, coreM = 1.0, coreDenom = 1.0;
+        double outDcIn = 0.0, outDcOut = 0.0;
         double transformerLow = 0.0, prevFlux = 0.0, magnetisation = 0.0;
         double coreHighLow = 0.0, coreHighBand = 0.0;
-        double prevSlope = 0.0, shapeRate = 60.0;
+        double prevSlope = 0.0, shapeRate = 60.0, widthScale = 1.0;
         int samplesSinceTurn = 0;
     };
 
     /** Low band level used to feed the core. */
     static constexpr double kLowBoostDriveDb = 1.6;    // core drive per dB of low boost (measured band saturates first)
-    static constexpr double kCoreDriveScale = 1.2;     // how far a given boost level pushes the shaper
     static constexpr double kHysteresisShare = 0.05;  // how much of the loop reaches the output
     /** Loop width at a standstill, in shaper-slope units. */
     static constexpr double hysteresisWidth = 0.02;    // plays the role of the static coercivity
@@ -212,10 +219,8 @@ private:
     /** How much of the shaped high band reaches the output. */
     static constexpr double kHighLossMix = 0.5;
 
-    double coreDrive = 1.0;
-    double coreBias = 0.0;
-
     void applyDryDelay (juce::AudioBuffer<float>& buffer, int numChannels, int numSamples);
+    void syncSmoothers (bool snap);
     void resetDspState();
 
     static constexpr int controlSubBlockSize = 32;
@@ -230,6 +235,7 @@ private:
     std::vector<NonlinearState> nonlinearStates;
     std::unique_ptr<juce::dsp::Oversampling<float>> oversampler;
     double dcBlockCoeff = 0.999;
+    double outDcCoeff = 0.999;
     double transformerLowCoeff = 0.02;
     /** Oversampled rate, kept for the core-loss rate weighting. */
     double oversampledRate = 192000.0;
@@ -241,15 +247,42 @@ private:
     std::vector<std::vector<float>> dryDelay;
     std::vector<int> dryDelayPos;
     std::vector<float> inGainRamp, outGainRamp, bypassRamp, driveRamp;
+    std::vector<float> tubeRamp, transformerRamp;
 
     juce::SmoothedValue<float> lowBoostSmoothed, lowAttenSmoothed, lowQSmoothed;
     juce::SmoothedValue<float> lowFreqHzSmoothed, highFreqHzSmoothed, attenFreqHzSmoothed;
     juce::SmoothedValue<float> highBoostSmoothed, highAttenSmoothed, bandwidthSmoothed;
     juce::SmoothedValue<float> inputGainSmoothed, outputGainSmoothed, driveSmoothed, bypassSmoothed;
+    juce::SmoothedValue<float> tubeSmoothed, transformerSmoothed;
+
+    struct RawParams
+    {
+        std::atomic<float>* lowFreq = nullptr;
+        std::atomic<float>* highFreq = nullptr;
+        std::atomic<float>* attenSel = nullptr;
+        std::atomic<float>* lowBoost = nullptr;
+        std::atomic<float>* lowAtten = nullptr;
+        std::atomic<float>* lowQ = nullptr;
+        std::atomic<float>* highBoost = nullptr;
+        std::atomic<float>* highAtten = nullptr;
+        std::atomic<float>* bandwidth = nullptr;
+        std::atomic<float>* inputGain = nullptr;
+        std::atomic<float>* outputGain = nullptr;
+        std::atomic<float>* drive = nullptr;
+        std::atomic<float>* tube = nullptr;
+        std::atomic<float>* transformer = nullptr;
+        std::atomic<float>* input = nullptr;
+        std::atomic<float>* bypass = nullptr;
+    } raw;
+
+    BandCoefficients cachedBand {};
+    double cachedBandSr = 0.0;
+    std::array<float, 9> cachedEqArgs {};
+    bool cachedBandValid = false;
 
     std::atomic<int> currentPreset { 0 };
     std::atomic<bool> loadingPreset { false };
-    std::atomic<float> inputLevel { 0.0f }, outputLevel { 0.0f };
+    std::atomic<uint32_t> uiRevision { 0 };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FullteqAudioProcessor)
 };

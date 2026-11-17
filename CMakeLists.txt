@@ -40,7 +40,7 @@ juce_generate_juce_header(Fullteq)
 # Silkscreen typeface embedded in the binary so the UI never depends on
 # fonts installed on the user's machine. Jost is SIL OFL 1.1 (Source/Fonts/OFL.txt).
 juce_add_binary_data(FullteqFonts
-  SOURCES Source/Fonts/JostRegular.ttf Source/Fonts/JostSemiBold.ttf)
+  SOURCES Source/Fonts/JostRegular.ttf)
 
 target_sources(Fullteq PRIVATE
   Source/PluginProcessor.cpp

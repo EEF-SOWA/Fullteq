@@ -155,6 +155,11 @@ int main (int argc, char** argv)
         FullteqAudioProcessorEditor editor (p);
         const auto image = editor.createComponentSnapshot (editor.getLocalBounds(), true, 2.0f);
         const juce::File file { juce::String (argv[2]) };
+        if (! file.getFileExtension().equalsIgnoreCase (".png"))
+        {
+            std::printf ("snapshot path must end in .png\n");
+            return 1;
+        }
         file.deleteFile();
         juce::FileOutputStream stream { file };
         juce::PNGImageFormat().writeImageToStream (image, stream);
@@ -418,6 +423,14 @@ int main (int argc, char** argv)
         const double lowLoud = 20.0 * std::log10 (amplitudeAt (run (p, sine (50.0, 0.9, 72000)), 50.0) / 0.9);
         const double highLoud = 20.0 * std::log10 (amplitudeAt (run (p, sine (4000.0, 0.9, 72000)), 4000.0) / 0.9);
         check (lowLoud < -0.3, "50 Hz compressed at high level", lowLoud);
+        // The asymmetric core adds a signal-dependent DC term; the output
+        // transformer must block it, as iron does.
+        setParam (p, "drive", 1.0f);
+        for (double hz : { 40.0, 100.0 })
+        {
+            const double dc = mean (run (p, sine (hz, 0.6, 72000)));
+            check (std::abs (dc) < 0.002, "transformer output has no DC", dc);
+        }
         // The core now carries real high-frequency loss, so the top end is
         // expected to lose level rather than pass untouched. What must not
         // happen is the transformer acting as a lowpass: the drop is bounded.
@@ -490,6 +503,59 @@ int main (int argc, char** argv)
         bool clean = true;
         for (float s : after) clean = clean && std::isfinite (s);
         check (clean, "input NaN/inf does not stick in the DSP state");
+    }
+
+    std::printf ("9b. TUBE and XFMR toggles ramp instead of stepping\n");
+    {
+        auto measure = [] (const char* id, double hz, float lowBoost, float drive, double amp)
+        {
+            FullteqAudioProcessor p;
+            prepare (p);
+            flat (p, true, true);
+            setParam (p, "drive", drive);
+            setParam (p, "lowBoost", lowBoost);
+            setParam (p, "tube", 0.0f);
+            setParam (p, "transformer", 0.0f);
+
+            constexpr int n = 28800; // 0.6 s in 32-sample blocks
+            constexpr int toggleAt = 14400;
+            std::vector<float> out ((size_t) n);
+            juce::MidiBuffer midi;
+            for (int start = 0; start < n; start += 32)
+            {
+                if (start == toggleAt)
+                    setParam (p, id, 1.0f);
+
+                juce::AudioBuffer<float> buffer (2, 32);
+                for (int i = 0; i < 32; ++i)
+                {
+                    const float v = (float) (amp * std::sin (2.0 * juce::MathConstants<double>::pi * hz * (start + i) / sampleRate));
+                    buffer.setSample (0, i, v);
+                    buffer.setSample (1, i, v);
+                }
+                p.processBlock (buffer, midi);
+                for (int i = 0; i < 32; ++i)
+                    out[(size_t) (start + i)] = buffer.getSample (0, i);
+            }
+
+            auto maxStep = [&out] (int from, int to)
+            {
+                double m = 0.0;
+                for (int i = std::max (1, from); i < to; ++i)
+                    m = std::max (m, std::abs ((double) out[(size_t) i] - out[(size_t) (i - 1)]));
+                return m;
+            };
+            return std::array<double, 3> { maxStep (4800, 12000), maxStep (13800, 16200), maxStep (18000, 27600) };
+        };
+
+        for (auto [id, hz, lowBoost, drive, amp] : { std::tuple { "tube", 1000.0, 0.0f, 1.0f, 0.9 },
+                                                      std::tuple { "transformer", 80.0, 12.0f, 0.8f, 0.4 } })
+        {
+            const auto steps = measure (id, hz, lowBoost, drive, amp);
+            const double steady = std::max (steps[0], steps[2]);
+            std::printf ("  %s: step before %.4f, during toggle %.4f, after %.4f\n", id, steps[0], steps[1], steps[2]);
+            check (steps[1] < steady * 1.5, "toggle does not step the waveform", steps[1] / std::max (1e-9, steady));
+        }
     }
 
     std::printf ("10. presets\n");
@@ -726,9 +792,9 @@ int main (int argc, char** argv)
         check (fast > slow + 2.0, "loop widens with pitch", fast - slow);
     }
 
-    std::printf ("16. multi-rate adaptive oversampling (44.1 / 96 / 192 kHz)\n");
+    std::printf ("16. multi-rate adaptive oversampling (44.1 / 88.2 / 96 / 192 kHz)\n");
     {
-        for (double sr : { 44100.0, 96000.0, 192000.0 })
+        for (double sr : { 44100.0, 88200.0, 96000.0, 192000.0 })
         {
             FullteqAudioProcessor p;
             p.setPlayConfigDetails (2, 2, sr, blockSize);
@@ -745,7 +811,7 @@ int main (int argc, char** argv)
             if (sr > 110000.0)
                 check (p.getLatencySamples() == 0, "192 kHz runs 1x with zero oversampler latency", (double) p.getLatencySamples());
             else
-                check (p.getLatencySamples() > 0, "44.1/96 kHz reports oversampler latency", (double) p.getLatencySamples());
+                check (p.getLatencySamples() > 0, "44.1/88.2/96 kHz reports oversampler latency", (double) p.getLatencySamples());
         }
     }
 

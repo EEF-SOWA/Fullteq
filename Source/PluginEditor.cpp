@@ -2,6 +2,7 @@
 
 #include <BinaryData.h>
 #include <cmath>
+#include <cstring>
 
 namespace
 {
@@ -39,6 +40,25 @@ namespace
     // Rotary sweeps, clockwise from 12 o'clock (JUCE convention, kept positive as Slider requires).
     constexpr float knobStart = 1.25f * kPi, knobEnd = 2.75f * kPi;
     inline float deg (float d) { return kTwoPi + d * kPi / 180.0f; }
+
+    /** Human-readable name for a knob, used for both tooltip and accessible title.
+        The panel repeats BOOST / ATTEN for the low and high bands, so the band
+        and the frequency source have to be stated explicitly. */
+    const char* knobTooltip (const char* paramId)
+    {
+        if (std::strcmp (paramId, "lowBoost") == 0)   return "LOW BOOST — wide low shelf, fixed 700 Hz corner (dB)";
+        if (std::strcmp (paramId, "lowAtten") == 0)   return "LOW ATTEN — cut shelf, corner tracks the CPS dial (dB)";
+        if (std::strcmp (paramId, "highBoost") == 0)  return "HIGH BOOST — resonant peak at the KCS dial (dB)";
+        if (std::strcmp (paramId, "highAtten") == 0)  return "HIGH ATTEN — high shelf at the ATTEN SEL frequency (dB)";
+        if (std::strcmp (paramId, "bandwidth") == 0)  return "BANDWIDTH — SHARP (0) to BROAD (10) high peak";
+        if (std::strcmp (paramId, "inputGain") == 0)  return "INPUT trim (dB)";
+        if (std::strcmp (paramId, "drive") == 0)      return "DRIVE — tube and transformer saturation (%)";
+        if (std::strcmp (paramId, "outputGain") == 0) return "OUTPUT trim (dB)";
+        if (std::strcmp (paramId, "lowFreq") == 0)    return "CPS — low-frequency dial (20 / 30 / 60 / 100 Hz)";
+        if (std::strcmp (paramId, "highFreq") == 0)   return "KCS — high-frequency dial (3–16 kHz)";
+        if (std::strcmp (paramId, "attenSel") == 0)   return "ATTEN SEL — high-cut shelf (5 / 10 / 20 kHz)";
+        return "";
+    }
 
     Point<float> polar (Point<float> c, float angle, float radius)
     {
@@ -602,17 +622,20 @@ void FullteqResponseCurve::paint (juce::Graphics& g)
     g.drawHorizontalLine ((int) dbToY (0.0f), b.getX() + 2.0f, b.getRight() - 2.0f);
 
     const int numPoints = juce::jmax (2, (int) b.getWidth());
-    std::vector<double> frequencies ((size_t) numPoints);
-    std::vector<float> magnitudes ((size_t) numPoints);
-    for (int i = 0; i < numPoints; ++i)
-        frequencies[(size_t) i] = minHz * std::pow (maxHz / minHz, (double) i / (double) (numPoints - 1));
-    processorRef.getResponseDb (frequencies.data(), magnitudes.data(), numPoints);
+    if ((int) curveHz.size() != numPoints)
+    {
+        curveHz.resize ((size_t) numPoints);
+        curveDb.resize ((size_t) numPoints);
+        for (int i = 0; i < numPoints; ++i)
+            curveHz[(size_t) i] = minHz * std::pow (maxHz / minHz, (double) i / (double) (numPoints - 1));
+    }
+    processorRef.getResponseDb (curveHz.data(), curveDb.data(), numPoints);
 
     juce::Path curve;
     for (int i = 0; i < numPoints; ++i)
     {
-        const float x = freqToX (frequencies[(size_t) i]);
-        const float y = dbToY (magnitudes[(size_t) i]);
+        const float x = freqToX (curveHz[(size_t) i]);
+        const float y = dbToY (curveDb[(size_t) i]);
         if (i == 0) curve.startNewSubPath (x, y); else curve.lineTo (x, y);
     }
 
@@ -682,31 +705,27 @@ FullteqAudioProcessorEditor::FullteqAudioProcessorEditor (FullteqAudioProcessor&
     panelView.addAndMakeVisible (responseCurve);
 
     auto& state = processorRef.apvts;
-    lowBoostA = std::make_unique<SliderAttachment> (state, "lowBoost", lowBoost);
-    lowAttenA = std::make_unique<SliderAttachment> (state, "lowAtten", lowAtten);
-    highBoostA = std::make_unique<SliderAttachment> (state, "highBoost", highBoost);
-    highAttenA = std::make_unique<SliderAttachment> (state, "highAtten", highAtten);
-    bandwidthA = std::make_unique<SliderAttachment> (state, "bandwidth", bandwidth);
-    inputGainA = std::make_unique<SliderAttachment> (state, "inputGain", inputGain);
-    driveA = std::make_unique<SliderAttachment> (state, "drive", drive);
-    outputGainA = std::make_unique<SliderAttachment> (state, "outputGain", outputGain);
-    // Choice parameters attach as stepped sliders (range 0..n-1, interval 1).
-    lowFreqA = std::make_unique<SliderAttachment> (state, "lowFreq", lowFreq);
-    highFreqA = std::make_unique<SliderAttachment> (state, "highFreq", highFreq);
-    attenSelA = std::make_unique<SliderAttachment> (state, "attenSel", attenSel);
-    inA = std::make_unique<ButtonAttachment> (state, "input", inButton);
-    tubeA = std::make_unique<ButtonAttachment> (state, "tube", tubeButton);
-    transformerA = std::make_unique<ButtonAttachment> (state, "transformer", transformerButton);
-    bypassA = std::make_unique<ButtonAttachment> (state, "bypass", bypassButton);
-
     for (auto [slider, paramId] : { std::pair<juce::Slider*, const char*> { &lowBoost, "lowBoost" },
                                     { &lowAtten, "lowAtten" }, { &highBoost, "highBoost" },
                                     { &highAtten, "highAtten" }, { &bandwidth, "bandwidth" },
                                     { &inputGain, "inputGain" }, { &drive, "drive" },
                                     { &outputGain, "outputGain" }, { &lowFreq, "lowFreq" },
                                     { &highFreq, "highFreq" }, { &attenSel, "attenSel" } })
+    {
+        // Choice parameters attach as stepped sliders (range 0..n-1, interval 1).
+        sliderAttachments.push_back (std::make_unique<SliderAttachment> (state, paramId, *slider));
         if (auto* param = state.getParameter (paramId))
+        {
             slider->setDoubleClickReturnValue (true, (double) param->convertFrom0to1 (param->getDefaultValue()));
+            const char* tip = knobTooltip (paramId);
+            slider->setTooltip (tip);
+            slider->setTitle (tip);
+        }
+    }
+    for (auto [button, paramId] : { std::pair<juce::ToggleButton*, const char*> { &inButton, "input" },
+                                    { &tubeButton, "tube" }, { &transformerButton, "transformer" },
+                                    { &bypassButton, "bypass" } })
+        buttonAttachments.push_back (std::make_unique<ButtonAttachment> (state, paramId, *button));
 
     for (auto* name : FullteqAudioProcessor::presetNames)
         presetBox.addItem (name, presetBox.getNumItems() + 1);
@@ -716,6 +735,8 @@ FullteqAudioProcessorEditor::FullteqAudioProcessorEditor (FullteqAudioProcessor&
         presetBox.setSelectedId (idx >= 0 ? idx + 1 : 0, juce::dontSendNotification);
     }
     presetBox.setJustificationType (juce::Justification::centredLeft);
+    presetBox.setTooltip ("Factory presets (selecting one replaces all knob values)");
+    presetBox.setTitle ("Preset");
     presetBox.onChange = [this]
     {
         const int id = presetBox.getSelectedId();
@@ -738,11 +759,15 @@ FullteqAudioProcessorEditor::FullteqAudioProcessorEditor (FullteqAudioProcessor&
         processorRef.loadPreset (cur < 0 ? 0 : (cur + 1) % numPresets);
         presetBox.setSelectedId (processorRef.getCurrentPresetIndex() + 1, juce::dontSendNotification);
     };
+    previousPreset.setTooltip ("Previous preset");
+    previousPreset.setTitle ("Previous preset");
+    nextPreset.setTooltip ("Next preset");
+    nextPreset.setTitle ("Next preset");
     panelView.addAndMakeVisible (previousPreset);
     panelView.addAndMakeVisible (nextPreset);
 
     setResizable (true, true);
-    setResizeLimits (660, 220, 2640, 880);
+    setResizeLimits (editorWidth / 2, editorHeight / 2, editorWidth * 2, editorHeight * 2);
     if (auto* constrainer = getConstrainer())
         constrainer->setFixedAspectRatio ((double) editorWidth / (double) editorHeight);
     layoutPanel();
@@ -999,9 +1024,12 @@ void FullteqAudioProcessorEditor::layoutPanel()
     lampBounds = Rectangle<int> (100, 100).withCentre (lampC.toInt());
 
     responseCurve.setBounds (graphBezel.reduced (10.0f).toNearestInt());
-    presetBox.setBounds (1050, 198, 200, 32);
-    previousPreset.setBounds (1050, 236, 98, 32);
-    nextPreset.setBounds (1152, 236, 98, 32);
+    const int graphX = (int) graphBezel.getX();
+    const int graphW = (int) graphBezel.getWidth();
+    presetBox.setBounds (graphX, (int) graphBezel.getBottom() + 22, graphW, 32);
+    const int buttonW = (graphW - 4) / 2;
+    previousPreset.setBounds (graphX, presetBox.getBottom() + 6, buttonW, 32);
+    nextPreset.setBounds (graphX + buttonW + 4, presetBox.getBottom() + 6, buttonW, 32);
 }
 
 void FullteqAudioProcessorEditor::timerCallback()
@@ -1012,6 +1040,13 @@ void FullteqAudioProcessorEditor::timerCallback()
     if (presetBox.getSelectedId() != expectedId)
         presetBox.setSelectedId (expectedId, juce::dontSendNotification);
 
+    const uint32_t revision = processorRef.getUiRevision();
+    const double sampleRate = processorRef.getSampleRate();
+    const bool rateChanged = ! juce::exactlyEqual (sampleRate, lastSampleRate);
+    lastSampleRate = sampleRate;
+    if (revision == lastUiRevision && ! rateChanged)
+        return;
+    lastUiRevision = revision;
     responseCurve.repaint();
     panelView.repaint (lampBounds);
 }
