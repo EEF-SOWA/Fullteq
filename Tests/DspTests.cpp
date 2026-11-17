@@ -6,6 +6,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <limits>
 #include <vector>
 
@@ -120,8 +121,7 @@ int main (int argc, char** argv)
 
     if (argc > 1 && juce::String (argv[1]) == "--sweep")
     {
-        // Low-band response matrix used by IMPROVEMENT_NOTES_sound_quality_ref.md §5.
-        // Prints dB at the reference frequencies for every dial x boost/cut setting.
+        // Low-band response matrix: prints dB at reference frequencies for every dial x boost/cut setting.
         static const double freqs[] = { 20, 25, 30, 40, 50, 60, 80, 100, 110, 150, 200, 300, 500, 1000 };
         static const float dials[] = { 20.0f, 30.0f, 60.0f, 100.0f };
         FullteqAudioProcessor p;
@@ -216,8 +216,7 @@ int main (int argc, char** argv)
     {
         // Measured-table model: the cut corner (800 Hz at the 60 Hz dial) sits
         // well above the boost corner, so the two shelves overlap across the
-        // whole bottom end instead of forming a 60 Hz bell. See
-        // IMPROVEMENT_NOTES_sound_quality_ref.md §5 for the full matrix.
+        // whole bottom end instead of forming a 60 Hz bell.
         FullteqAudioProcessor p;
         prepare (p);
         flat (p, false, false);
@@ -312,7 +311,6 @@ int main (int argc, char** argv)
 
     if (argc > 1 && juce::String (argv[1]) == "--thd")
     {
-        // Core THD matrix used by IMPROVEMENT_NOTES_sound_quality_ref.md section 6.
         // Transformer only, tube off, so the numbers are the iron alone. THD is
         // measured from harmonics 2..8 of a 40/100 Hz tone at 0.25 amplitude.
         // Frequency is a sweep axis: core loss rises with dPhi/dt, so a fixed
@@ -339,7 +337,7 @@ int main (int argc, char** argv)
         return 0;
     }
 
-    std::printf ("15. core loss tracks pitch (loop widens with frequency)\n");
+    std::printf ("5b. core loss tracks pitch (loop widens with frequency)\n");
     {
         // The previous core used one fixed loop width, so every pitch distorted
         // by the same amount. Core loss is eddy current plus magnetic viscosity,
@@ -401,6 +399,14 @@ int main (int argc, char** argv)
             if (k != 13)
                 worstAlias = std::max (worstAlias, 20.0 * std::log10 (std::max (1e-9, amplitudeAt (hf, k * 1000.0)) / hfFund));
         check (worstAlias < -60.0, "worst alias product below -60 dB (13 kHz, 0.5 amp, full drive)", worstAlias);
+
+        const auto hfHot = run (p, sine (13000.0, 0.8, 72000));
+        const double hfHotFund = amplitudeAt (hfHot, 13000.0);
+        double worstHotAlias = -200.0;
+        for (int k = 1; k <= 23; ++k)
+            if (k != 13)
+                worstHotAlias = std::max (worstHotAlias, 20.0 * std::log10 (std::max (1e-9, amplitudeAt (hfHot, k * 1000.0)) / hfHotFund));
+        check (worstHotAlias < -60.0, "worst alias product below -60 dB (13 kHz, 0.8 amp, full drive)", worstHotAlias);
     }
 
     std::printf ("7. transformer only compresses lows\n");
@@ -492,8 +498,24 @@ int main (int argc, char** argv)
         prepare (p);
         p.loadPreset (1);
         check (std::abs (*p.apvts.getRawParameterValue ("lowBoost") - 8.0f) < 1e-3f, "preset 1 sets low boost 8");
+        check (p.getCurrentPresetIndex() == 1, "preset 1 active", (double) p.getCurrentPresetIndex());
         p.loadPreset (2);
         check (FullteqAudioProcessor::indexFromChoice (*p.apvts.getRawParameterValue ("lowFreq"), 4) == 1, "preset 2 selects 30 Hz");
+        check (p.getCurrentPresetIndex() == 2, "preset 2 active", (double) p.getCurrentPresetIndex());
+
+        juce::MemoryBlock presetState;
+        p.getStateInformation (presetState);
+        setParam (p, "lowBoost", 4.0f);
+        check (p.getCurrentPresetIndex() == -1, "manual edit marks preset custom (-1)", (double) p.getCurrentPresetIndex());
+        juce::MemoryBlock customState;
+        p.getStateInformation (customState);
+
+        FullteqAudioProcessor restored;
+        restored.setStateInformation (presetState.getData(), (int) presetState.getSize());
+        check (restored.getCurrentPresetIndex() == 2, "state restore keeps preset 2", (double) restored.getCurrentPresetIndex());
+        restored.setStateInformation (customState.getData(), (int) customState.getSize());
+        check (restored.getCurrentPresetIndex() == -1, "state restore keeps custom (-1)", (double) restored.getCurrentPresetIndex());
+        check (std::abs (*restored.apvts.getRawParameterValue ("lowBoost") - 4.0f) < 1e-3f, "state restore keeps lowBoost 4");
     }
 
     std::printf ("11. high band keeps its lift above the dial frequency (air settings)\n");
@@ -623,9 +645,7 @@ int main (int argc, char** argv)
         const auto [outA2, outA2b] = runTriangle (false);
 
         // A against itself must be bit identical.
-        bool selfSame = true;
-        for (size_t i = 0; i < outA.size(); ++i)
-            if (outA[i] != outA2[i]) { selfSame = false; break; }
+        const bool selfSame = std::memcmp (outA.data(), outA2.data(), outA.size() * sizeof (float)) == 0;
         juce::ignoreUnused (outA2b);
         check (selfSame, "control: two runs without the bias are identical");
 
@@ -637,10 +657,10 @@ int main (int argc, char** argv)
         }
         const double rel = 20.0 * std::log10 (std::max (1e-12, diff / std::max (1e-12, level)));
         std::printf ("  triangle output changes by %.1f dB when the core is magnetised\n", rel);
-        check (std::isfinite (rel), "measurement is finite", rel);
+        check (std::isfinite (rel) && rel > -20.0, "core memory changes triangle output above -20 dB", rel);
     }
 
-    std::printf ("16. loop width grows with pitch (frequency-dependent hysteresis)\n");
+    std::printf ("15. loop width grows with pitch (frequency-dependent hysteresis)\n");
     {
         // The objective for this stage. A static play operator gives every pitch
         // the same loop; real iron does not. Measure the core's memory at two

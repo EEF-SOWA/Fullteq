@@ -46,10 +46,9 @@ struct FullteqBiquad
  *   input gain -> passive EQ network -> tube stage -> transformer -> output
  *
  * Passive network (five cascaded sections, so the controls load each other):
- *   [0] low boost   : low shelf whose corner is kLowBoostCornerRatio above the
- *                     dial (measured: 300 Hz at the 60 Hz dial, 700 Hz at
- *                     100 Hz), so the lower dials spread over more of the
- *                     bottom end instead of sharpening the corner.
+ *   [0] low boost   : low shelf at a fixed 700 Hz corner (kLowBoostCornerHz),
+ *                     with dial-scaled amplitude so lower dials lift the whole
+ *                     bottom end instead of forming a narrow bell.
  *   [1] low atten   : low shelf whose corner is kLowAttenCornerRatio above the
  *                     dial (measured: 800 Hz at 60 Hz, 1500 Hz at 100 Hz). Used
  *                     together with [0] at the same dial this yields the
@@ -65,11 +64,12 @@ struct FullteqBiquad
  * oversampler latency is reported to the host and applied to the dry path so
  * the bypass cross-fade stays phase aligned.
  */
-class FullteqAudioProcessor final : public juce::AudioProcessor
+class FullteqAudioProcessor final : public juce::AudioProcessor,
+                                    private juce::AudioProcessorValueTreeState::Listener
 {
 public:
     FullteqAudioProcessor();
-    ~FullteqAudioProcessor() override = default;
+    ~FullteqAudioProcessor() override;
 
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
     void releaseResources() override;
@@ -118,22 +118,14 @@ public:
     static int indexFromChoice (float rawValue, int numChoices);
 
     /** Low-band Pultec trick constants, taken from the measured turnover table
-        (GroupDIY thread "Pultec EQP-1A Turnover Frequencies", compiled in
-        IMPROVEMENT_NOTES_sound_quality_ref.md section 2):
+        (GroupDIY thread "Pultec EQP-1A Turnover Frequencies"):
 
           dial        20 Hz   30 Hz   60 Hz   100 Hz
           boost       100     200     300     700   (Hz, -3 dB vs maximum)
           cut         250     400     800    1500   (Hz, -3 dB vs maximum)
 
-        The dial never moves a first-order corner: on the hardware every dial
-        sounds famously low, and with a fixed capacitor each lower dial spreads
-        the same corner further instead of sharpening it. So the corner is the
-        dial times kLowBoostCornerRatio (mean 4.25; smartest is 4.3, 1.5x the
-        dial at 100 Hz) / times kLowAttenCornerRatio (mean 9.33), and the dial
-        only sets the amplitude.
-
         The boost keeps one corner for every dial (700 Hz, the measured turnover
-        of the 100 Hz dial) instead of dial * ratio: with a single 13 dB shelf
+        of the 100 Hz dial) instead of dial * ratio: with a single shelf
         the amp dials would have to be about 1 dB to hit their 100-300 Hz
         turnovers, which sounds like nothing, and the hardware's signature is
         that a low boost is already wide. The cut keeps dial * 9.33 because its
@@ -146,7 +138,6 @@ public:
         20 Hz, the old trick level). The cut is anchored on its measured
         plateau (about -12 dB below 20 Hz at atten 8).
     */
-    static constexpr double kLowBoostCornerRatio = 4.25;     // mean of the boost table (T100)
     static constexpr double kLowBoostCornerHz = 700.0;        // fixed corner: the boost's "whole low end"
     static constexpr double kLowAttenCornerRatio = 9.333;    // 250/400/800/1500 Hz over 20/30/60/100 Hz
     static constexpr double kLowBoostRefDial = 100.0;    // the dial whose old level is kept
@@ -178,14 +169,17 @@ public:
     float getOutputLevel() const noexcept { return outputLevel.load (std::memory_order_relaxed); }
 
 private:
-    /** Per-channel state of the two nonlinear stages.
-        core tracks the low band that drives the core (flux), prev is the last
-        shaper input so the hysteresis can see where the flux is coming from.
-    */
-    struct NonlinearState { double dcIn = 0.0, dcOut = 0.0, transformerLow = 0.0;
-                                   double core = 0.0, prev = 0.0, magnetisation = 0.0, envelope = 0.0;
-                                   double coreHighLow = 0.0; double coreHighBand = 0.0;
-                                   double prevShaped = 0.0, prevSlope = 0.0, shapeRate = 60.0; int samplesSinceTurn = 0; };   // lowpasses: high-band split + its upper cap
+    void parameterChanged (const juce::String& parameterID, float newValue) override;
+
+    /** Per-channel state of the tube and transformer nonlinear stages. */
+    struct NonlinearState
+    {
+        double dcIn = 0.0, dcOut = 0.0, tubePrevX = 0.0;
+        double transformerLow = 0.0, prevFlux = 0.0, magnetisation = 0.0;
+        double coreHighLow = 0.0, coreHighBand = 0.0;
+        double prevSlope = 0.0, shapeRate = 60.0;
+        int samplesSinceTurn = 0;
+    };
 
     /** Low band level used to feed the core. */
     static constexpr double kLowBoostDriveDb = 1.6;    // core drive per dB of low boost (measured band saturates first)
@@ -217,16 +211,15 @@ private:
     double coreDrive = 1.0;
     double coreBias = 0.0;
 
-    BandCoefficients makeBand (float lowBoostDb, float lowAttenDb, float lowQ, float lowFreqChoice,
-                               float highBoostDb, float highAttenDb, float bandwidth) const;
     void applyDryDelay (juce::AudioBuffer<float>& buffer, int numChannels, int numSamples);
     void resetDspState();
     void resizeScratch (int numSamples);
 
     static constexpr int oversamplingLog2 = 2; // 4x: keeps heavy-drive harmonics from folding back into the audio band
     static constexpr int oversamplingFactor = 1 << oversamplingLog2;
+    static constexpr int controlSubBlockSize = 32;
 
-    double currentSampleRate = 44100.0;
+    std::atomic<double> currentSampleRate { 44100.0 };
     int maxBlockSize = 512;
     int latencySamples = 0;
     bool wasBypassed = false;
@@ -241,8 +234,6 @@ private:
     /** One-pole coefficient for the high-band split. */
     double highLossCoeff = 0.01;
     double highCapCoeff = 0.01;
-    /** Smoothing for the pitch-rate estimate. */
-    double shapeRateCoeff = 0.002;
 
     juce::AudioBuffer<float> dryBuffer;
     std::vector<std::vector<float>> dryDelay;
@@ -250,10 +241,12 @@ private:
     std::vector<float> inGainRamp, outGainRamp, bypassRamp, driveRamp;
 
     juce::SmoothedValue<float> lowBoostSmoothed, lowAttenSmoothed, lowQSmoothed;
+    juce::SmoothedValue<float> lowFreqHzSmoothed, highFreqHzSmoothed, attenFreqHzSmoothed;
     juce::SmoothedValue<float> highBoostSmoothed, highAttenSmoothed, bandwidthSmoothed;
     juce::SmoothedValue<float> inputGainSmoothed, outputGainSmoothed, driveSmoothed, bypassSmoothed;
 
     std::atomic<int> currentPreset { 0 };
+    std::atomic<bool> loadingPreset { false };
     std::atomic<float> inputLevel { 0.0f }, outputLevel { 0.0f };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FullteqAudioProcessor)

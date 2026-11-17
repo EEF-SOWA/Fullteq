@@ -44,12 +44,12 @@
 
 ## 진행 상황 (구현 완료)
 
-- [x] Phase 1: 저역 쉘프 2단 (부스트 코너 ×1.0 / 감쇠 코너 ×1.5, 감쇠 게인 ×0.65). 부스트 8 + 감쇠 8 @60 Hz에서 25 Hz +3.8 dB, 110 Hz -2.4 dB, 1 kHz 평탄
+- [x] Phase 1: 측정 턴오버 테이블 기반 저역 쉘프 2단 (부스트 고정 700 Hz 코너 + 다이얼 √비율 게인, 감쇠 코너 다이얼 ×9.333 = 250/400/800/1500 Hz). 60 Hz·8/8 트릭에서 두 쉘프가 겹쳐 20~60 Hz -2 dB·300 Hz +0.6 dB 기울기를 형성하며, 100 Hz·8/8에서 서브 +1 dB·1 kHz -2.7 dB 동작
 - [x] Phase 2: 비대칭 tanh 튜브 (2·3차 고조파, DC 블로커), 4배 오버샘플링, 드라이브 기본 15 %
 - [x] Phase 3: 고역 부스트 = 공명 피크 (대역폭 0 SHARP ~ 10 BROAD, 로그 매핑), 감쇠 = ATTEN SEL 하이쉘프
 - [x] Phase 4: 트랜스포머 저역 코어 포화 (TUBE / XFMR 토글)
 - [x] Phase 5: 응답 그래프 복원, 입력/드라이브/출력 트림
-- 검증: `Tests/DspTests.cpp` (빌드: `cmake --build build --target FullteqTests`, 실행: `build/FullteqTests_artefacts/FullteqTests`). 15개 항목 전부 통과
+- 검증: `Tests/DspTests.cpp` (빌드: `cmake --build build --target FullteqTests`, 실행: `build/FullteqTests_artefacts/Release/FullteqTests`). 16개 테스트 그룹 전부 통과
 - 미실시: 실제 DAW 로드, pluginval, 청감 비교
 
 ## 롤백 방법

@@ -66,5 +66,6 @@ target_link_libraries(FullteqTests PRIVATE
   FullteqFonts
   juce::juce_audio_utils
   juce::juce_dsp
-  juce::juce_recommended_config_flags)
+  juce::juce_recommended_config_flags
+  juce::juce_recommended_warning_flags)
 set_target_properties(FullteqTests PROPERTIES EXCLUDE_FROM_ALL TRUE)

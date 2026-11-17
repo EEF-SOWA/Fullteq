@@ -668,7 +668,7 @@ FullteqAudioProcessorEditor::FullteqAudioProcessorEditor (FullteqAudioProcessor&
     configureToggle (transformerButton, "bat");
     configureToggle (bypassButton, "power");
 
-    inButton.setTooltip ("IN: route the signal through the equalizer");
+    inButton.setTooltip ("IN: toggle processing (bypasses the unit when off)");
     tubeButton.setTooltip ("Tube amplifier stage (2nd and 3rd harmonics)");
     transformerButton.setTooltip ("Transformer low-frequency core saturation");
     bypassButton.setTooltip ("OFF bypasses the whole unit");
@@ -695,21 +695,32 @@ FullteqAudioProcessorEditor::FullteqAudioProcessorEditor (FullteqAudioProcessor&
 
     for (auto* name : FullteqAudioProcessor::presetNames)
         presetBox.addItem (name, presetBox.getNumItems() + 1);
-    presetBox.setSelectedId (processorRef.getCurrentPresetIndex() + 1, juce::dontSendNotification);
+    presetBox.setTextWhenNothingSelected ("(custom)");
+    {
+        const int idx = processorRef.getCurrentPresetIndex();
+        presetBox.setSelectedId (idx >= 0 ? idx + 1 : 0, juce::dontSendNotification);
+    }
     presetBox.setJustificationType (juce::Justification::centredLeft);
-    presetBox.onChange = [this] { processorRef.loadPreset (presetBox.getSelectedId() - 1); };
+    presetBox.onChange = [this]
+    {
+        const int id = presetBox.getSelectedId();
+        if (id > 0)
+            processorRef.loadPreset (id - 1);
+    };
     addAndMakeVisible (presetBox);
 
     previousPreset.onClick = [this]
     {
         const int numPresets = (int) FullteqAudioProcessor::presetNames.size();
-        processorRef.loadPreset ((processorRef.getCurrentPresetIndex() + numPresets - 1) % numPresets);
+        const int cur = processorRef.getCurrentPresetIndex();
+        processorRef.loadPreset (cur < 0 ? numPresets - 1 : (cur + numPresets - 1) % numPresets);
         presetBox.setSelectedId (processorRef.getCurrentPresetIndex() + 1, juce::dontSendNotification);
     };
     nextPreset.onClick = [this]
     {
         const int numPresets = (int) FullteqAudioProcessor::presetNames.size();
-        processorRef.loadPreset ((processorRef.getCurrentPresetIndex() + 1) % numPresets);
+        const int cur = processorRef.getCurrentPresetIndex();
+        processorRef.loadPreset (cur < 0 ? 0 : (cur + 1) % numPresets);
         presetBox.setSelectedId (processorRef.getCurrentPresetIndex() + 1, juce::dontSendNotification);
     };
     addAndMakeVisible (previousPreset);
@@ -962,7 +973,8 @@ void FullteqAudioProcessorEditor::resized()
 void FullteqAudioProcessorEditor::timerCallback()
 {
     // Keep the preset box in sync when the host changes the program.
-    const int expectedId = processorRef.getCurrentPresetIndex() + 1;
+    const int idx = processorRef.getCurrentPresetIndex();
+    const int expectedId = idx >= 0 ? idx + 1 : 0;
     if (presetBox.getSelectedId() != expectedId)
         presetBox.setSelectedId (expectedId, juce::dontSendNotification);
 

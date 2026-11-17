@@ -8,6 +8,13 @@
 namespace
 {
     constexpr double kPi = 3.14159265358979323846;
+    constexpr double kLn2 = 0.69314718055994530942;
+
+    double lnCosh (double v) noexcept
+    {
+        const double av = std::abs (v);
+        return av + std::log1p (std::exp (-2.0 * av)) - kLn2;
+    }
 
     using Stage = FullteqAudioProcessor::StageCoefficients;
 
@@ -123,6 +130,22 @@ FullteqAudioProcessor::FullteqAudioProcessor()
                                      .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       apvts (*this, nullptr, "PARAMETERS", createParameterLayout())
 {
+    for (auto* param : getParameters())
+        if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (param))
+            apvts.addParameterListener (ranged->paramID, this);
+}
+
+FullteqAudioProcessor::~FullteqAudioProcessor()
+{
+    for (auto* param : getParameters())
+        if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (param))
+            apvts.removeParameterListener (ranged->paramID, this);
+}
+
+void FullteqAudioProcessor::parameterChanged (const juce::String&, float)
+{
+    if (! loadingPreset.load (std::memory_order_relaxed))
+        currentPreset.store (-1, std::memory_order_relaxed);
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout FullteqAudioProcessor::createParameterLayout()
@@ -241,19 +264,6 @@ FullteqAudioProcessor::BandCoefficients FullteqAudioProcessor::computeBandCoeffi
     return band;
 }
 
-FullteqAudioProcessor::BandCoefficients FullteqAudioProcessor::makeBand (
-    float lowBoostDb, float lowAttenDb, float lowQ, float lowFreqChoice, float highBoostDb, float highAttenDb, float bandwidth) const
-{
-    const int lowIndex = indexFromChoice (lowFreqChoice, (int) lowFrequencies.size());
-    const int highIndex = indexFromChoice (*apvts.getRawParameterValue ("highFreq"), (int) highFrequencies.size());
-    const int attenIndex = indexFromChoice (*apvts.getRawParameterValue ("attenSel"), (int) attenuationFrequencies.size());
-
-    return computeBandCoefficients (currentSampleRate,
-                                    lowFrequencies[(size_t) lowIndex], lowBoostDb, lowAttenDb, lowQ,
-                                    highFrequencies[(size_t) highIndex], attenuationFrequencies[(size_t) attenIndex],
-                                    highBoostDb, highAttenDb, bandwidth);
-}
-
 double FullteqAudioProcessor::stageMagnitudeLinear (const StageCoefficients& stage, double hz, double sampleRate)
 {
     const double w = 2.0 * kPi * hz / sampleRate;
@@ -274,18 +284,24 @@ double FullteqAudioProcessor::stageMagnitudeLinear (const StageCoefficients& sta
 
 void FullteqAudioProcessor::getResponseDb (const double* frequenciesHz, float* outDb, int numPoints)
 {
-    const BandCoefficients band = makeBand (*apvts.getRawParameterValue ("lowBoost"), *apvts.getRawParameterValue ("lowAtten"),
-                                            *apvts.getRawParameterValue ("lowQ"),
-                                            *apvts.getRawParameterValue ("lowFreq"),
-                                            *apvts.getRawParameterValue ("highBoost"), *apvts.getRawParameterValue ("highAtten"),
-                                            *apvts.getRawParameterValue ("bandwidth"));
+    const double sr = currentSampleRate.load (std::memory_order_relaxed);
+    const int lowIndex = indexFromChoice (*apvts.getRawParameterValue ("lowFreq"), (int) lowFrequencies.size());
+    const int highIndex = indexFromChoice (*apvts.getRawParameterValue ("highFreq"), (int) highFrequencies.size());
+    const int attenIndex = indexFromChoice (*apvts.getRawParameterValue ("attenSel"), (int) attenuationFrequencies.size());
+    const BandCoefficients band = computeBandCoefficients (
+        sr,
+        lowFrequencies[(size_t) lowIndex],
+        *apvts.getRawParameterValue ("lowBoost"), *apvts.getRawParameterValue ("lowAtten"), *apvts.getRawParameterValue ("lowQ"),
+        highFrequencies[(size_t) highIndex], attenuationFrequencies[(size_t) attenIndex],
+        *apvts.getRawParameterValue ("highBoost"), *apvts.getRawParameterValue ("highAtten"),
+        *apvts.getRawParameterValue ("bandwidth"));
 
     for (int i = 0; i < numPoints; ++i)
     {
-        const double hz = clampFrequency (frequenciesHz[i], currentSampleRate);
+        const double hz = clampFrequency (frequenciesHz[i], sr);
         double magnitude = 1.0;
         for (const auto& stage : band.stages)
-            magnitude *= stageMagnitudeLinear (stage, hz, currentSampleRate);
+            magnitude *= stageMagnitudeLinear (stage, hz, sr);
 
 
         outDb[i] = juce::Decibels::gainToDecibels (static_cast<float> (magnitude));
@@ -301,9 +317,11 @@ void FullteqAudioProcessor::loadPreset (int index)
 {
     const auto clamped = juce::jlimit (0, (int) presetNames.size() - 1, index);
 
+    loadingPreset.store (true, std::memory_order_relaxed);
     for (const auto& [id, value] : makePreset (clamped))
         if (auto* parameter = apvts.getParameter (id))
             parameter->setValueNotifyingHost (parameter->convertTo0to1 (value));
+    loadingPreset.store (false, std::memory_order_relaxed);
 
     currentPreset.store (clamped, std::memory_order_relaxed);
 }
@@ -331,7 +349,7 @@ void FullteqAudioProcessor::resetDspState()
 
 void FullteqAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
-    currentSampleRate = sampleRate;
+    currentSampleRate.store (sampleRate, std::memory_order_relaxed);
     maxBlockSize = juce::jmax (1, samplesPerBlock);
 
     const int numChannels = juce::jmax (1, getTotalNumInputChannels());
@@ -359,9 +377,13 @@ void FullteqAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBloc
     resizeScratch (maxBlockSize);
 
     constexpr double rampSeconds = 0.03;
+    constexpr double selectorRampSeconds = 0.015;
     lowBoostSmoothed.reset (sampleRate, rampSeconds);
     lowAttenSmoothed.reset (sampleRate, rampSeconds);
     lowQSmoothed.reset (sampleRate, rampSeconds);
+    lowFreqHzSmoothed.reset (sampleRate, selectorRampSeconds);
+    highFreqHzSmoothed.reset (sampleRate, selectorRampSeconds);
+    attenFreqHzSmoothed.reset (sampleRate, selectorRampSeconds);
     highBoostSmoothed.reset (sampleRate, rampSeconds);
     highAttenSmoothed.reset (sampleRate, rampSeconds);
     bandwidthSmoothed.reset (sampleRate, rampSeconds);
@@ -374,6 +396,9 @@ void FullteqAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBloc
     lowBoostSmoothed.setCurrentAndTargetValue (*apvts.getRawParameterValue ("lowBoost"));
     lowAttenSmoothed.setCurrentAndTargetValue (*apvts.getRawParameterValue ("lowAtten"));
     lowQSmoothed.setCurrentAndTargetValue (*apvts.getRawParameterValue ("lowQ"));
+    lowFreqHzSmoothed.setCurrentAndTargetValue (lowFrequencies[(size_t) indexFromChoice (*apvts.getRawParameterValue ("lowFreq"), (int) lowFrequencies.size())]);
+    highFreqHzSmoothed.setCurrentAndTargetValue (highFrequencies[(size_t) indexFromChoice (*apvts.getRawParameterValue ("highFreq"), (int) highFrequencies.size())]);
+    attenFreqHzSmoothed.setCurrentAndTargetValue (attenuationFrequencies[(size_t) indexFromChoice (*apvts.getRawParameterValue ("attenSel"), (int) attenuationFrequencies.size())]);
     highBoostSmoothed.setCurrentAndTargetValue (*apvts.getRawParameterValue ("highBoost"));
     highAttenSmoothed.setCurrentAndTargetValue (*apvts.getRawParameterValue ("highAtten"));
     bandwidthSmoothed.setCurrentAndTargetValue (*apvts.getRawParameterValue ("bandwidth"));
@@ -444,14 +469,16 @@ void FullteqAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     if (numSamples <= 0 || numCh <= 0 || oversampler == nullptr)
         return;
 
-    if (numSamples > (int) inGainRamp.size())
-        resizeScratch (numSamples);
-
-    const float decay = std::pow (0.001f, (float) numSamples / (float) currentSampleRate);
+    const double sr = currentSampleRate.load (std::memory_order_relaxed);
+    const float decay = std::pow (0.001f, (float) numSamples / (float) sr);
     const float peakIn = buffer.getMagnitude (0, numSamples);
 
     const bool bypassTarget = isEffectBypassed();
     bypassSmoothed.setTargetValue (bypassTarget ? 1.0f : 0.0f);
+
+    const float targetLowHz = lowFrequencies[(size_t) indexFromChoice (*apvts.getRawParameterValue ("lowFreq"), (int) lowFrequencies.size())];
+    const float targetHighHz = highFrequencies[(size_t) indexFromChoice (*apvts.getRawParameterValue ("highFreq"), (int) highFrequencies.size())];
+    const float targetAttenHz = attenuationFrequencies[(size_t) indexFromChoice (*apvts.getRawParameterValue ("attenSel"), (int) attenuationFrequencies.size())];
 
     if (bypassTarget && ! bypassSmoothed.isSmoothing())
     {
@@ -460,6 +487,9 @@ void FullteqAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
         lowBoostSmoothed.setCurrentAndTargetValue (*apvts.getRawParameterValue ("lowBoost"));
         lowAttenSmoothed.setCurrentAndTargetValue (*apvts.getRawParameterValue ("lowAtten"));
         lowQSmoothed.setCurrentAndTargetValue (*apvts.getRawParameterValue ("lowQ"));
+        lowFreqHzSmoothed.setCurrentAndTargetValue (targetLowHz);
+        highFreqHzSmoothed.setCurrentAndTargetValue (targetHighHz);
+        attenFreqHzSmoothed.setCurrentAndTargetValue (targetAttenHz);
         highBoostSmoothed.setCurrentAndTargetValue (*apvts.getRawParameterValue ("highBoost"));
         highAttenSmoothed.setCurrentAndTargetValue (*apvts.getRawParameterValue ("highAtten"));
         bandwidthSmoothed.setCurrentAndTargetValue (*apvts.getRawParameterValue ("bandwidth"));
@@ -486,6 +516,9 @@ void FullteqAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     lowBoostSmoothed.setTargetValue (*apvts.getRawParameterValue ("lowBoost"));
     lowAttenSmoothed.setTargetValue (*apvts.getRawParameterValue ("lowAtten"));
     lowQSmoothed.setTargetValue (*apvts.getRawParameterValue ("lowQ"));
+    lowFreqHzSmoothed.setTargetValue (targetLowHz);
+    highFreqHzSmoothed.setTargetValue (targetHighHz);
+    attenFreqHzSmoothed.setTargetValue (targetAttenHz);
     highBoostSmoothed.setTargetValue (*apvts.getRawParameterValue ("highBoost"));
     highAttenSmoothed.setTargetValue (*apvts.getRawParameterValue ("highAtten"));
     bandwidthSmoothed.setTargetValue (*apvts.getRawParameterValue ("bandwidth"));
@@ -496,67 +529,70 @@ void FullteqAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     const bool tubeOn = *apvts.getRawParameterValue ("tube") >= 0.5f;
     const bool transformerOn = *apvts.getRawParameterValue ("transformer") >= 0.5f;
 
-    // Core drive follows the low band, the way the real unit's output
-    // transformer is pushed by a big low-boost lift. Only the boost and the
-    // drive knob raise it: attenuation adds no flux.
-    const double driveKnob = (double) *apvts.getRawParameterValue ("drive");
-    const double liftDb = kLowBoostDriveDb * std::max (0.0, (double) lowBoostSmoothed.getTargetValue()) / 8.0;
-    // Anchor: at the default drive (0.15) and no low boost, coreDrive is 1.0, so
-    // the core behaves exactly as it did before the band link existed (the 50 Hz
-    // lift test measures that state). Boost and the drive knob raise it from there.
-    coreDrive = std::pow (10.0, (liftDb + 6.0 * (driveKnob - 0.15)) / 20.0);
-    coreBias = 0.12 + 0.18 * (double) *apvts.getRawParameterValue ("drive");
-
-    // Filter coefficients are updated once per block from the smoothed value
-    // at the end of the block; gains, drive and the bypass mix ramp per sample.
-    const float lowBoostDb = lowBoostSmoothed.skip (numSamples);
-    const float lowAttenDb = lowAttenSmoothed.skip (numSamples);
-    const float lowQ = lowQSmoothed.skip (numSamples);
-    const float highBoostDb = highBoostSmoothed.skip (numSamples);
-    const float highAttenDb = highAttenSmoothed.skip (numSamples);
-    const float bandwidth = bandwidthSmoothed.skip (numSamples);
-
-    for (int i = 0; i < numSamples; ++i)
-    {
-        inGainRamp[(size_t) i] = inputGainSmoothed.getNextValue();
-        outGainRamp[(size_t) i] = outputGainSmoothed.getNextValue();
-        driveRamp[(size_t) i] = driveSmoothed.getNextValue();
-        bypassRamp[(size_t) i] = bypassSmoothed.getNextValue();
-    }
-
-    // Dry path: untouched input, delayed to line up with the oversampled wet path.
-    dryBuffer.makeCopyOf (buffer, true);
-    applyDryDelay (dryBuffer, numCh, numSamples);
-
-    BandCoefficients band = makeBand (lowBoostDb, lowAttenDb, lowQ, *apvts.getRawParameterValue ("lowFreq"),
-                                      highBoostDb, highAttenDb, bandwidth);
-
-    // 1) Passive EQ network.
-    for (int ch = 0; ch < numCh; ++ch)
-    {
-        auto& stages = channelFilters[(size_t) ch];
-        for (size_t i = 0; i < stages.size(); ++i)
-        {
-            const auto& s = band.stages[i];
-            stages[i].setCoefficients (s.b0, s.b1, s.b2, s.a1, s.a2);
-        }
-
-        float* data = buffer.getWritePointer (ch);
-        for (int i = 0; i < numSamples; ++i)
-        {
-            float y = data[i] * inGainRamp[(size_t) i];
-            for (auto& stage : stages)
-                y = stage.process (y);
-            data[i] = y;
-        }
-    }
-
-    // 2) Tube stage and 3) transformer, oversampled.
+    // Process in control sub-blocks bounded by maxBlockSize so neither the
+    // oversampler nor scratch buffers allocate on the audio thread, and EQ /
+    // core parameters update at <= 32-sample (~0.67 ms @ 48 kHz) intervals.
+    const int maxSubBlock = juce::jmin (controlSubBlockSize, maxBlockSize);
     juce::dsp::AudioBlock<float> fullBlock (buffer);
-    for (int start = 0; start < numSamples; start += maxBlockSize)
+    for (int blockStart = 0; blockStart < numSamples; blockStart += maxSubBlock)
     {
-        const int length = juce::jmin (maxBlockSize, numSamples - start);
-        auto sub = fullBlock.getSubBlock ((size_t) start, (size_t) length);
+        const int length = juce::jmin (maxSubBlock, numSamples - blockStart);
+
+        const float lowBoostDb = lowBoostSmoothed.skip (length);
+        const float lowAttenDb = lowAttenSmoothed.skip (length);
+        const float lowQ = lowQSmoothed.skip (length);
+        const float lowFreqHz = lowFreqHzSmoothed.skip (length);
+        const float highFreqHz = highFreqHzSmoothed.skip (length);
+        const float attenFreqHz = attenFreqHzSmoothed.skip (length);
+        const float highBoostDb = highBoostSmoothed.skip (length);
+        const float highAttenDb = highAttenSmoothed.skip (length);
+        const float bandwidth = bandwidthSmoothed.skip (length);
+
+        for (int i = 0; i < length; ++i)
+        {
+            inGainRamp[(size_t) i] = inputGainSmoothed.getNextValue();
+            outGainRamp[(size_t) i] = outputGainSmoothed.getNextValue();
+            driveRamp[(size_t) i] = driveSmoothed.getNextValue();
+            bypassRamp[(size_t) i] = bypassSmoothed.getNextValue();
+        }
+
+        // Core drive follows the smoothed low boost and drive (anchor: 1.0 at
+        // default drive 0.15 and 0 dB low boost).
+        const double driveSub = (double) driveRamp[(size_t) (length - 1)];
+        const double liftDb = kLowBoostDriveDb * std::max (0.0, (double) lowBoostDb) / 8.0;
+        coreDrive = std::pow (10.0, (liftDb + 6.0 * (driveSub - 0.15)) / 20.0);
+        coreBias = 0.12 + 0.18 * driveSub;
+
+        // Dry path: untouched input, delayed to line up with the oversampled wet path.
+        for (int ch = 0; ch < numCh; ++ch)
+            dryBuffer.copyFrom (ch, 0, buffer, ch, blockStart, length);
+        applyDryDelay (dryBuffer, numCh, length);
+
+        const BandCoefficients band = computeBandCoefficients (
+            sr, lowFreqHz, lowBoostDb, lowAttenDb, lowQ, highFreqHz, attenFreqHz, highBoostDb, highAttenDb, bandwidth);
+
+        // 1) Passive EQ network.
+        for (int ch = 0; ch < numCh; ++ch)
+        {
+            auto& stages = channelFilters[(size_t) ch];
+            for (size_t i = 0; i < stages.size(); ++i)
+            {
+                const auto& s = band.stages[i];
+                stages[i].setCoefficients (s.b0, s.b1, s.b2, s.a1, s.a2);
+            }
+
+            float* data = buffer.getWritePointer (ch, blockStart);
+            for (int i = 0; i < length; ++i)
+            {
+                float y = data[i] * inGainRamp[(size_t) i];
+                for (auto& stage : stages)
+                    y = stage.process (y);
+                data[i] = y;
+            }
+        }
+
+        // 2) Tube stage and 3) transformer, oversampled.
+        auto sub = fullBlock.getSubBlock ((size_t) blockStart, (size_t) length);
         auto up = oversampler->processSamplesUp (sub);
         const int upLength = (int) up.getNumSamples();
 
@@ -567,18 +603,24 @@ void FullteqAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
 
             for (int j = 0; j < upLength; ++j)
             {
-                const double drive = driveRamp[(size_t) (start + (j >> oversamplingLog2))];
+                const double drive = driveRamp[(size_t) (j >> oversamplingLog2)];
                 double x = static_cast<double> (data[j]);
 
                 if (tubeOn)
                 {
-                    // Triode-like shaper: tanh for odd harmonics plus a small
-                    // bias for 2nd harmonic, normalised to unity small-signal
-                    // gain, then a DC blocker removes the bias offset.
+                    // Triode-like ADAA1 shaper: tanh for odd harmonics plus bias
+                    // for 2nd harmonic, normalised to unity small-signal gain,
+                    // evaluated with current (k, bias) at both endpoints so
+                    // smoothed drive changes stay consistent.
                     const double k = 0.6 + 4.4 * drive;
                     const double bias = 0.10 + 0.10 * drive;
                     const double tb = std::tanh (bias);
-                    const double y = (std::tanh (k * x + bias) - tb) / (k * (1.0 - tb * tb));
+                    const double dx = x - state.tubePrevX;
+                    const double shapedTube = std::abs (dx) < 1.0e-6
+                        ? std::tanh (k * 0.5 * (x + state.tubePrevX) + bias)
+                        : (lnCosh (k * x + bias) - lnCosh (k * state.tubePrevX + bias)) / (k * dx);
+                    state.tubePrevX = x;
+                    const double y = (shapedTube - tb) / (k * (1.0 - tb * tb));
 
                     const double hp = y - state.dcIn + dcBlockCoeff * state.dcOut;
                     state.dcIn = y;
@@ -600,15 +642,6 @@ void FullteqAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
                     const double tb = std::tanh (coreBias);
                     const double shaped = (std::tanh (m * flux + coreBias) - tb) / (m * (1.0 - tb * tb));
 
-                    // Hysteresis (Preisach-style play operator): the core output
-                    // only follows the flux once it has moved far enough past
-                    // where it last turned around, so it lags on the way back and
-                    // remembers the previous swing.
-                    // Loop width: a fraction of the shaper slope, the physical
-                    // scale of where the core turns around. Scaling it with the
-                    // signal level instead swallows quiet material, so it stays
-                    // tied to the drive (which is what sets the core's working
-                    // point) and to the shaper slope.
                     // Core loss at high frequency.
                     //
                     // Measuring loss from the core's own flux does not work: the
@@ -654,8 +687,10 @@ void FullteqAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
                     // Pitch, not level: count how long a half-swing takes by
                     // timing the sign changes of the core's slope. That is the
                     // frequency the iron actually sees, independent of amplitude.
-                    const double dShaped = shaped - state.prevShaped;
-                    if (dShaped > 0.0 && state.prevSlope <= 0.0)
+                    // Track the turnaround rate on the flux itself so smoothing
+                    // steps in drive or low-boost never inject false slope turns.
+                    const double dFlux = flux - state.prevFlux;
+                    if (dFlux > 0.0 && state.prevSlope <= 0.0)
                     {
                         if (state.samplesSinceTurn > 0)
                         {
@@ -666,7 +701,7 @@ void FullteqAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
                         state.samplesSinceTurn = 0;
                     }
                     ++state.samplesSinceTurn;
-                    state.prevSlope = dShaped;
+                    state.prevSlope = dFlux;
                     const double widthScale = std::clamp (1.0 + kHysteresisRatePerOctave * std::log2 (std::max (1.0, state.shapeRate / kHysteresisRefRate)),
                                                           0.25, kHysteresisMaxScale);
                     const double width = hysteresisWidth * m * widthScale;
@@ -675,8 +710,7 @@ void FullteqAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
                     else if (shaped < state.magnetisation - width)
                         state.magnetisation = shaped + width;
 
-                    state.prev = flux;
-                    state.prevShaped = shaped;
+                    state.prevFlux = flux;
 
                     // Hysteresis enters as the memory term only: the gap between
                     // where the core is and where the flux says it should be.
@@ -691,18 +725,18 @@ void FullteqAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
         }
 
         oversampler->processSamplesDown (sub);
-    }
 
-    // 4) Output gain and bypass cross-fade against the aligned dry signal.
-    for (int ch = 0; ch < numCh; ++ch)
-    {
-        float* out = buffer.getWritePointer (ch);
-        const float* dry = dryBuffer.getReadPointer (ch);
-
-        for (int i = 0; i < numSamples; ++i)
+        // 4) Output gain and bypass cross-fade against the aligned dry signal.
+        for (int ch = 0; ch < numCh; ++ch)
         {
-            const float mix = bypassRamp[(size_t) i];
-            out[i] = out[i] * outGainRamp[(size_t) i] * (1.0f - mix) + dry[i] * mix;
+            float* out = buffer.getWritePointer (ch, blockStart);
+            const float* dry = dryBuffer.getReadPointer (ch);
+
+            for (int i = 0; i < length; ++i)
+            {
+                const float mix = bypassRamp[(size_t) i];
+                out[i] = out[i] * outGainRamp[(size_t) i] * (1.0f - mix) + dry[i] * mix;
+            }
         }
     }
 
@@ -712,7 +746,7 @@ void FullteqAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
 }
 
 int FullteqAudioProcessor::getNumPrograms() { return (int) presetNames.size(); }
-int FullteqAudioProcessor::getCurrentProgram() { return getCurrentPresetIndex(); }
+int FullteqAudioProcessor::getCurrentProgram() { return juce::jmax (0, getCurrentPresetIndex()); }
 void FullteqAudioProcessor::setCurrentProgram (int index) { loadPreset (index); }
 const juce::String FullteqAudioProcessor::getProgramName (int index)
 {
@@ -724,14 +758,27 @@ void FullteqAudioProcessor::changeProgramName (int, const juce::String&) {}
 void FullteqAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     if (auto xml = apvts.copyState().createXml())
+    {
+        xml->setAttribute ("preset", currentPreset.load (std::memory_order_relaxed));
         copyXmlToBinary (*xml, destData);
+    }
 }
 
 void FullteqAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
     if (auto xml = getXmlFromBinary (data, sizeInBytes))
+    {
         if (xml->hasTagName (apvts.state.getType()))
+        {
+            const int savedPreset = xml->getIntAttribute ("preset", -1);
+            xml->removeAttribute ("preset");
+            loadingPreset.store (true, std::memory_order_relaxed);
             apvts.replaceState (juce::ValueTree::fromXml (*xml));
+            loadingPreset.store (false, std::memory_order_relaxed);
+            currentPreset.store (savedPreset >= 0 && savedPreset < (int) presetNames.size() ? savedPreset : -1,
+                                 std::memory_order_relaxed);
+        }
+    }
 }
 
 juce::AudioProcessorEditor* FullteqAudioProcessor::createEditor() { return new FullteqAudioProcessorEditor (*this); }
