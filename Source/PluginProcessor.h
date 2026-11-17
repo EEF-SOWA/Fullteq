@@ -217,7 +217,6 @@ private:
 
     void applyDryDelay (juce::AudioBuffer<float>& buffer, int numChannels, int numSamples);
     void resetDspState();
-    void resizeScratch (int numSamples);
 
     static constexpr int controlSubBlockSize = 32;
 

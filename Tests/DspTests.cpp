@@ -749,6 +749,20 @@ int main (int argc, char** argv)
         }
     }
 
+    std::printf ("17. releaseResources() followed by processBlock() stays valid\n");
+    {
+        FullteqAudioProcessor p;
+        prepare (p);
+        flat (p, false, false);
+        run (p, sine (1000.0, 0.25, 4096));
+        p.releaseResources();
+        const auto outAfter = run (p, sine (1000.0, 0.25, 4096));
+        bool finite = true;
+        float peak = 0.0f;
+        for (float s : outAfter) { finite = finite && std::isfinite (s); peak = std::max (peak, std::abs (s)); }
+        check (finite && peak > 0.1f, "processBlock passes audio after releaseResources()", (double) peak);
+    }
+
     std::printf ("\n%s (%d failure%s)\n", failures == 0 ? "ALL PASSED" : "FAILED", failures, failures == 1 ? "" : "s");
     return failures == 0 ? 0 : 1;
 }

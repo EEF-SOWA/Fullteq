@@ -331,14 +331,6 @@ void FullteqAudioProcessor::loadPreset (int index)
     currentPreset.store (clamped, std::memory_order_relaxed);
 }
 
-void FullteqAudioProcessor::resizeScratch (int numSamples)
-{
-    inGainRamp.resize ((size_t) numSamples);
-    outGainRamp.resize ((size_t) numSamples);
-    bypassRamp.resize ((size_t) numSamples);
-    driveRamp.resize ((size_t) numSamples);
-}
-
 void FullteqAudioProcessor::resetDspState()
 {
     for (auto& stages : channelFilters)
@@ -381,7 +373,10 @@ void FullteqAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBloc
     dryBuffer.setSize (numChannels, maxBlockSize, false, false, true);
     dryDelay.assign ((size_t) numChannels, std::vector<float> ((size_t) juce::jmax (0, latencySamples), 0.0f));
     dryDelayPos.assign ((size_t) numChannels, 0);
-    resizeScratch (maxBlockSize);
+    inGainRamp.resize ((size_t) maxBlockSize);
+    outGainRamp.resize ((size_t) maxBlockSize);
+    bypassRamp.resize ((size_t) maxBlockSize);
+    driveRamp.resize ((size_t) maxBlockSize);
 
     constexpr double rampSeconds = 0.03;
     constexpr double selectorRampSeconds = 0.015;
@@ -421,7 +416,10 @@ void FullteqAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBloc
 void FullteqAudioProcessor::releaseResources()
 {
     resetDspState();
-    dryBuffer.setSize (0, 0, false, false, false);
+    dryBuffer.clear();
+    for (auto& line : dryDelay)
+        std::fill (line.begin(), line.end(), 0.0f);
+    std::fill (dryDelayPos.begin(), dryDelayPos.end(), 0);
 }
 
 bool FullteqAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -635,6 +633,12 @@ void FullteqAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
                     state.dcIn = y;
                     state.dcOut = hp;
                     x = hp;
+                }
+                else
+                {
+                    state.tubePrevX = x;
+                    state.dcIn = 0.0;
+                    state.dcOut = 0.0;
                 }
 
                 if (transformerOn)

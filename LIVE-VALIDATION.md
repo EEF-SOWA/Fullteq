@@ -2,14 +2,14 @@
 
 ## Current Universal 2 Build (`x86_64` + `arm64`, macOS 11.0+)
 
-- Date: 2026-11-17 17:46 KST
-- VST3 binary SHA-256 (`~/Library/Audio/Plug-Ins/VST3/Fullteq.vst3/Contents/MacOS/Fullteq`): `3cafde0eb66328799fc1dca2667d7c5edcd96d2ed5efcf48ea23fcf55414848b`
-- AU binary SHA-256 (`~/Library/Audio/Plug-Ins/Components/Fullteq.component/Contents/MacOS/Fullteq`): `8c8f31773ea7220514404f223e31e4661ce21c2938e43c61594bb6eb8dac5781`
-- `FullteqTests`: 18 test groups PASS (0 failures), including `IN` vs `POWER` separation, multi-rate adaptive oversampling (44.1 / 96 / 192 kHz), preset invalidation/restore, and hot-drive ADAA1 aliasing (`-67.7 dB`).
-- `FullteqTests --snapshot`: PASS (2280×760, 0..20 dB dial scales, resizable layout).
+- Date: 2026-11-17 17:57 KST
+- VST3 binary SHA-256 (`~/Library/Audio/Plug-Ins/VST3/Fullteq.vst3/Contents/MacOS/Fullteq`): `6cebfcf906f6e928b98caa778119acf1122f1301bf615520372190f16576247f`
+- AU binary SHA-256 (`~/Library/Audio/Plug-Ins/Components/Fullteq.component/Contents/MacOS/Fullteq`): `0634ed292a66dc2bc672c8fb71fadfd5e3f28e3b0492e4c9d9bcfec08b6b4582`
+- `FullteqTests`: 20 test groups PASS (0 failures), including `releaseResources()` followed by `processBlock()`, `IN` vs `POWER` separation, multi-rate adaptive oversampling (44.1 / 96 / 192 kHz), preset invalidation/restore, and hot-drive ADAA1 aliasing (`-67.7 dB`).
 - `pluginval --strictness-level 10`: PASS on both VST3 and AU.
 - `auval -v aufx Fteq EEFL`: PASS.
-- Ableton Live 12.4.6 load on this Universal 2 build: `unavailable` (the existing Live process kept the earlier `29fd2b9` image mapped via `lsof`; requires restarting Live to bind the new Universal 2 hashes).
+- `FullteqTests --snapshot`: PASS (2280×760).
+- Ableton Live 12.4.6 load on this Universal 2 build: `unavailable` (Ableton Live is actively running another workspace test session, so Live was not restarted or modified).
 
 ## Earlier Ableton Live 12.4.6 Host Load (`29fd2b9`, `arm64`)
 
