@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.22)
 
 set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
 
-project(Fullteq VERSION 0.1.0 LANGUAGES C CXX)
+project(Fullteq VERSION 0.9.0 LANGUAGES C CXX)
 
 if(APPLE AND NOT CMAKE_OSX_ARCHITECTURES)
   set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "macOS Universal 2 architectures" FORCE)
@@ -22,7 +22,11 @@ FetchContent_Declare(juce
 FetchContent_MakeAvailable(juce)
 
 juce_add_plugin(Fullteq
+  VERSION ${PROJECT_VERSION}
   COMPANY_NAME "EEF LABs"
+  COMPANY_WEBSITE "https://github.com/eefsowa-source/Fullteq"
+  COMPANY_COPYRIGHT "Copyright (C) 2026 EEF LABs"
+  PLUGIN_DESCRIPTION "Passive tube program equalizer"
   BUNDLE_ID com.eeflabs.fullteq
   IS_SYNTH FALSE
   NEEDS_MIDI_INPUT FALSE

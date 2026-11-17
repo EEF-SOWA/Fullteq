@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pluginval
+        run: |
+          brew install --cask pluginval
+          echo "/Applications/pluginval.app/Contents/MacOS" >> "$GITHUB_PATH"
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DFULLTEQ_INSTALL_PLUGINS=OFF
+
+      - name: Build
+        run: cmake --build build --target FullteqTests Fullteq_VST3 Fullteq_AU Fullteq_Standalone --parallel 4
+
+      - name: DSP tests
+        run: ./build/FullteqTests_artefacts/Release/FullteqTests
+
+      - name: Validate VST3
+        run: pluginval --strictness-level 10 --validate build/Fullteq_artefacts/Release/VST3/Fullteq.vst3
+
+      - name: Check Universal 2
+        run: |
+          lipo -archs build/Fullteq_artefacts/Release/VST3/Fullteq.vst3/Contents/MacOS/Fullteq
+          lipo -archs build/Fullteq_artefacts/Release/VST3/Fullteq.vst3/Contents/MacOS/Fullteq | grep -q arm64
+          lipo -archs build/Fullteq_artefacts/Release/VST3/Fullteq.vst3/Contents/MacOS/Fullteq | grep -q x86_64

@@ -63,7 +63,7 @@
 
 ### 2.5 나머지 사소 항목 (P3, 미수정)
 
-1. LICENSE 부재 — JUCE 8 듀얼 라이선스(AGPLv3/상용). README는 있음. 배포 전 결정 필요(법률 자문 대체 아님). Jost 폰트는 OFL 처리 완료.
+1. LICENSE — 해결. AGPLv3로 배포하고 JUCE 8 AGPL 사용, Jost는 OFL 1.1. `LICENSE`와 `THIRD_PARTY_NOTICES.md` 추가.
 2. `getResponseDb`는 패시브 네트워크만 계산 — 툴팁을 "Passive EQ network response"로 정정해 오해는 줄었지만, 튜브·트랜스·트림을 포함한 실제 응답과는 여전히 다름(테스트 7/12: 50 Hz +0.46~+0.9 dB, 4 kHz -0.15~-1.6 dB).
 3. `clampFrequency` 상한 0.45×fs로 44.1 kHz에서 그래프의 20 kHz 지점은 19.845 kHz 값(`PluginProcessor.cpp:21`).
 
@@ -87,13 +87,13 @@
 
 ## 5. 권장 조치 순서
 
-1. LICENSE 결정(배포 시) — 유일하게 남은 법적/정책 항목.
+1. LICENSE 결정 — 완료(AGPLv3).
 2. 원하면 Phase 1 목표 문구를 현재 측정 모델에 맞게 정정(사운드 변경 없이 문서만).
 3. 실 DAW 로드/청감 비교(유일하게 남은 큰 미검증).
 
 ## 6. 미검증 항목
 
-- 실 DAW 로드 및 자동화 동작, 청감 비교, 88.2 kHz 동작(테스트는 44.1/48/96/192 kHz), LV2/AAX(타깃 아님), AU pluginval(Pluginval은 VST3만 실행 — AU는 `auval` PASS로 대체).
+- 실 DAW 로드: Ableton Live 12.4.6에서 VST3/AU 로드·파라미터·오디오 확인. 자동화/저장 재개, 청감 비교, 88.2 kHz, LV2/AAX(타깃 아님)는 미검증. AU pluginval은 VST3만 실행 — AU는 `auval` PASS로 대체.
 
 ## 7. 변경 이력 (2026-11-18)
 

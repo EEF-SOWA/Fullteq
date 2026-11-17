@@ -217,7 +217,7 @@ int main (int argc, char** argv)
         }
     }
 
-    std::printf ("3. low band Pultec trick (60 Hz, boost 8 / atten 8)\n");
+    std::printf ("3. low band trick (60 Hz, boost 8 / atten 8)\n");
     {
         // Measured-table model: the cut corner (800 Hz at the 60 Hz dial) sits
         // well above the boost corner, so the two shelves overlap across the

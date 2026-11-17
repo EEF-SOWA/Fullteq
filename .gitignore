@@ -1,5 +1,6 @@
 # CMake/Ninja build output
 build/
+dist/
 *_artefacts/
 Fullteq_artefacts/
 

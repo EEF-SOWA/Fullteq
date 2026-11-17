@@ -1,0 +1,36 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install pluginval
+        run: |
+          brew install --cask pluginval
+          echo "/Applications/pluginval.app/Contents/MacOS" >> "$GITHUB_PATH"
+
+      - name: Build and package
+        run: ./scripts/package-macos.sh
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Fullteq 0.9.0 Beta
+          body_path: docs/release-notes-0.9.0.md
+          prerelease: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/Fullteq-0.9.0-macOS-universal.zip
+            dist/SHA256SUMS.txt

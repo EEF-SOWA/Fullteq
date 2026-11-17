@@ -107,7 +107,7 @@ namespace
         switch (index)
         {
             case 0: return makePresetEntries (2, 0.0f, 0.0f, 4, 0.0f, 0.0f, 1, 5.0f, FullteqAudioProcessor::kDefaultDrive, 0.0f); // Init
-            case 1: return makePresetEntries (2, 8.0f, 8.0f, 4, 0.0f, 0.0f, 1, 5.0f, FullteqAudioProcessor::kDefaultDrive, 0.0f); // Pultec Low Trick
+            case 1: return makePresetEntries (2, 8.0f, 8.0f, 4, 0.0f, 0.0f, 1, 5.0f, FullteqAudioProcessor::kDefaultDrive, 0.0f); // Low Trick
             case 2: return makePresetEntries (1, 7.0f, 2.0f, 4, 0.0f, 0.0f, 1, 5.0f, 0.20f, 0.0f);   // Deep Sub Lift
             case 3: return makePresetEntries (3, 2.0f, 0.0f, 2, 5.0f, 0.0f, 1, 3.5f, FullteqAudioProcessor::kDefaultDrive, -0.5f); // Vocal Presence
             case 4: return makePresetEntries (2, 2.5f, 1.5f, 5, 3.0f, 1.0f, 2, 8.0f, 0.25f, -0.5f);  // Master Glue
@@ -120,7 +120,7 @@ namespace
 
 const std::array<const char*, 8> FullteqAudioProcessor::presetNames
 {
-    "Init", "Pultec Low Trick", "Deep Sub Lift", "Vocal Presence",
+    "Init", "Low Trick", "Deep Sub Lift", "Vocal Presence",
     "Master Glue", "Bright Air", "Tame Harsh", "Tube Warmth"
 };
 

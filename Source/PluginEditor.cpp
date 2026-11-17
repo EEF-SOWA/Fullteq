@@ -124,7 +124,7 @@ namespace
         g.drawLine ({ c - d + Point<float> (0.0f, r * 0.2f), c + d + Point<float> (0.0f, r * 0.2f) }, 0.7f);
     }
 
-    /** Pultec-style black bakelite knob: scalloped skirt, raised collar, concave glossy cap, pointer line. */
+    /** Vintage-style black bakelite knob: scalloped skirt, raised collar, concave glossy cap, pointer line. */
     void drawSkirtedKnob (juce::Graphics& g, Point<float> c, float R, float angle, int lobes, bool hovered)
     {
         juce::Path skirt;
