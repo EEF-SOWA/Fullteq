@@ -61,8 +61,8 @@ To install while building, omit `-DFULLTEQ_INSTALL_PLUGINS=OFF`.
 ## Validation
 
 This beta passes the offline DSP test suite, `pluginval` strictness 10 on
-VST3, and `auval` on AU. Ableton Live 12.4.6 is the only tested host. See
-`LIVE-VALIDATION.md` for the results. Verify downloaded files with
+VST3, and `auval` on AU. Ableton Live 12.4.6 is the only tested host. See the
+GitHub release page for validation results. Verify downloaded files with
 `SHA256SUMS.txt`.
 
 ## License
