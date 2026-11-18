@@ -4,10 +4,10 @@
 
 - Build: macOS 11+, Universal 2 (`arm64` and `x86_64`), version 0.9.0.
 - Release package: `Fullteq-0.9.0-macOS-universal.zip`
-- ZIP SHA-256: `5e58e1d4c3a8d0886d62fb43c5c658f27784015c861670c70fd09ecc3d7537e7`
-- VST3 binary SHA-256: `f3a5d0a541aa317b1e4118d42448f352f8da285543be6e9566aba598a2811057`
-- AU binary SHA-256: `dd4627385aba454d3b0bdf8541a351f084b52d47a840efe39953fab2d856023a`
-- Standalone binary SHA-256: `8bb25b5f8c6f4b0fdb222e32fc0dfcdf5d85a2466fc54a0e4b495f71352f9fb0`
+- ZIP SHA-256: `3cabea31cbf68d1b04e5b39d9b9a3651bbff3d7beba85114c1f66f207bb641a4`
+- VST3 binary SHA-256: `363bdbd0d3110eba698c8eba50e7b9a8c723c226005104fabc745682d0e5ed80`
+- AU binary SHA-256: `ab453337c50f7a55e4b9a352cd1505d8d301a9798ad0f2db0fd8ac2dba6f4ac7`
+- Standalone binary SHA-256: `d55c2f637678803ca2efbdb318711bfdf5f7426b3540a943cdcb259035147f3b`
 
 ### Offline and format gates
 
